@@ -1,2 +1,7 @@
 
 package-lock.json
+bun.lock
+dist
+node_modules
+server/server-data
+server/server
