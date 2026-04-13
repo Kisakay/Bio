@@ -62,7 +62,7 @@ const socialLinks: SocialLink[] = [
 
 const profileBadges: ProfileBadge[] = [
   { label: 'Bug Hunter Gold', icon: `${import.meta.env.BASE_URL}assets/discord_badges/bug_hunter_level_2.svg` },
-  { label: 'Active Developer', icon: `${import.meta.env.BASE_URL}assets/discord_badges/active_developer.svg` },
+  { label: 'Early Verified Bot Developer', icon: `${import.meta.env.BASE_URL}assets/discord_badges/early_verified_developer.svg` },
   { label: 'Server Booster 24 Months', icon: `${import.meta.env.BASE_URL}assets/discord_badges/boosting_24_months.svg` },
 ]
 
@@ -70,11 +70,10 @@ let refreshTimer: number | undefined
 let removeCursorListeners: (() => void) | undefined
 
 onMounted(() => {
-  const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
   const supportsFinePointer = window.matchMedia('(hover: hover) and (pointer: fine)').matches
 
   entered.value = false
-  tiltEnabled.value = supportsFinePointer && !prefersReducedMotion
+  tiltEnabled.value = true;
   void updateNowPlaying()
   void registerView()
 
