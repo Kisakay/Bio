@@ -1,0 +1,21 @@
+{
+  "name": "kisakay",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:api": "cd server && go run .",
+    "build": "vite build",
+    "build:api": "cd server && go build .",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "vue": "^3.4.31"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.1.2",
+    "typescript": "^5.3.3",
+    "vite": "^5.0.8"
+  }
+}
