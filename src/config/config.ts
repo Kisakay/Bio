@@ -9,7 +9,7 @@ const profileConfig: ProfileConfigSource = {
     audioPlayLabel: 'Play audio',
     audioPauseLabel: 'Pause audio',
     playerTrackLabel: 'song.mp3',
-    bannerLabel: 'kisakay.com',
+    bannerLabel: new URL(document.URL).host,
     bannerAlt: 'Kisakay banner',
     avatarAlt: 'Portrait of Kisakay',
     handle: '@2h0',
