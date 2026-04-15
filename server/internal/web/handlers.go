@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"kisakay/server/internal/lastfm"
 	"kisakay/server/internal/views"
 )
 
@@ -41,16 +42,22 @@ func (s *Server) handleLastfm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !s.lastfmClient.HasCredentials() {
-		writeJSON(w, http.StatusInternalServerError, map[string]string{
-			"error": "missing LASTFM_API_KEY",
+	username, err := lastfmUsernameFromPath(r.URL.Path, s.config.LastfmUser)
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{
+			"error": err.Error(),
 		})
 		return
 	}
 
-	track, err := s.lastfmClient.FetchNowPlaying(r.Context())
+	track, err := s.lastfm.GetNowPlaying(r.Context(), username)
 	if err != nil {
-		writeJSON(w, http.StatusBadGateway, map[string]string{
+		status := http.StatusBadGateway
+		if errors.Is(err, lastfm.ErrMissingCredentials) {
+			status = http.StatusInternalServerError
+		}
+
+		writeJSON(w, status, map[string]string{
 			"error": err.Error(),
 		})
 		return
@@ -151,4 +158,22 @@ func viewUsernameFromPath(path string) (string, error) {
 	}
 
 	return views.NormalizeUsername(rawUsername)
+}
+
+func lastfmUsernameFromPath(path, defaultUsername string) (string, error) {
+	if path == "/api/lastfm" || path == "/api/lastfm/" {
+		return lastfm.NormalizeUsername(defaultUsername)
+	}
+
+	prefix := "/api/lastfm/"
+	if !strings.HasPrefix(path, prefix) {
+		return "", errors.New("last.fm username is required")
+	}
+
+	rawUsername := strings.Trim(strings.TrimPrefix(path, prefix), "/")
+	if strings.Contains(rawUsername, "/") {
+		return "", errors.New("last.fm username is required")
+	}
+
+	return lastfm.NormalizeUsername(rawUsername)
 }

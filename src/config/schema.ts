@@ -68,6 +68,8 @@ export interface ProfileTheme {
 
 export interface StaticApiConfig {
   lastfmPath: string
+  lastfmUsername: string
+  lastfmEnabled: boolean
   viewsPath: string
   refreshIntervalMs: number
 }

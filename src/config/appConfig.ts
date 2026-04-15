@@ -9,6 +9,7 @@ import type {
 interface ApiConfig {
   baseUrl: string
   lastfmPath: string
+  lastfmEnabled: boolean
   viewsPath: string
   refreshIntervalMs: number
 }
@@ -42,6 +43,15 @@ function sanitizeProfileUsername(username: string) {
   }
 
   return fallbackProfileUsername
+}
+
+function sanitizeLastfmUsername(username: string, fallbackUsername: string) {
+  const trimmed = username.trim().toLowerCase()
+  if (/^[a-z0-9._-]+$/.test(trimmed)) {
+    return trimmed
+  }
+
+  return sanitizeProfileUsername(fallbackUsername)
 }
 
 function appendPathSegment(basePath: string, segment: string) {
@@ -157,12 +167,16 @@ export const appConfig: AppConfig = {
   badges: sanitizeBadges(profileConfig.badges),
   api: {
     baseUrl: resolveApiBaseUrl(import.meta.env.VITE_API_BASE_URL),
-    lastfmPath: profileConfig.api.lastfmPath,
+    lastfmPath: appendPathSegment(
+      profileConfig.api.lastfmPath,
+      sanitizeLastfmUsername(profileConfig.api.lastfmUsername, profileConfig.content.username),
+    ),
+    lastfmEnabled: profileConfig.api.lastfmEnabled !== false,
     viewsPath: appendPathSegment(
       profileConfig.api.viewsPath,
       sanitizeProfileUsername(profileConfig.content.username),
     ),
-    refreshIntervalMs: sanitizeNumber(profileConfig.api.refreshIntervalMs, 60_000),
+    refreshIntervalMs: sanitizeNumber(profileConfig.api.refreshIntervalMs, 240_000),
   },
   theme,
   themeStyles: {

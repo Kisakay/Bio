@@ -67,6 +67,15 @@ func (c *Client) HasCredentials() bool {
 }
 
 func (c *Client) FetchNowPlaying(ctx context.Context) (*NowPlaying, error) {
+	return c.FetchNowPlayingForUser(ctx, c.user)
+}
+
+func (c *Client) FetchNowPlayingForUser(ctx context.Context, user string) (*NowPlaying, error) {
+	username := strings.TrimSpace(user)
+	if username == "" {
+		return nil, errors.New("last.fm username is required")
+	}
+
 	endpoint := url.URL{
 		Scheme: "https",
 		Host:   "ws.audioscrobbler.com",
@@ -75,7 +84,7 @@ func (c *Client) FetchNowPlaying(ctx context.Context) (*NowPlaying, error) {
 
 	query := endpoint.Query()
 	query.Set("method", "user.getrecenttracks")
-	query.Set("user", c.user)
+	query.Set("user", username)
 	query.Set("api_key", c.apiKey)
 	query.Set("format", "json")
 	query.Set("limit", "1")
@@ -102,7 +111,7 @@ func (c *Client) FetchNowPlaying(ctx context.Context) (*NowPlaying, error) {
 		return nil, err
 	}
 
-	return parseTrack(payload.RecentTracks.Track, c.user)
+	return parseTrack(payload.RecentTracks.Track, username)
 }
 
 func parseTrack(raw json.RawMessage, fallbackUser string) (*NowPlaying, error) {

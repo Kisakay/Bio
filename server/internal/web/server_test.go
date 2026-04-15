@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -14,23 +15,43 @@ import (
 	"kisakay/server/internal/views"
 )
 
-func TestHandlerRootListsAPIRoutes(t *testing.T) {
-	t.Parallel()
+type stubLastfmService struct {
+	track             *lastfm.NowPlaying
+	err               error
+	receivedUsernames []string
+}
 
-	store, err := views.NewStore(filepath.Join(t.TempDir(), "views.json"))
+func (s *stubLastfmService) GetNowPlaying(_ context.Context, username string) (*lastfm.NowPlaying, error) {
+	s.receivedUsernames = append(s.receivedUsernames, username)
+	return s.track, s.err
+}
+
+func newTestStore(t *testing.T) *views.Store {
+	t.Helper()
+
+	store, err := views.NewStore(filepath.Join(t.TempDir(), "app.db"))
 	if err != nil {
 		t.Fatalf("NewStore() error = %v", err)
 	}
-	defer func() {
+
+	t.Cleanup(func() {
 		if err := store.Close(); err != nil {
 			t.Fatalf("Close() error = %v", err)
 		}
-	}()
+	})
+
+	return store
+}
+
+func TestHandlerRootListsAPIRoutes(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t)
 
 	server := NewServer(config.Config{
 		ViewHashSecret:   "test-secret",
 		RateLimitEnabled: false,
-	}, lastfm.NewClient("", "Kisakay", &http.Client{}), store)
+	}, &stubLastfmService{}, store)
 
 	recorder := httptest.NewRecorder()
 	request := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -50,36 +71,32 @@ func TestHandlerRootListsAPIRoutes(t *testing.T) {
 		t.Fatalf("expected API name to be set, got %q", payload.Name)
 	}
 
-	if len(payload.Routes) != 2 {
-		t.Fatalf("expected 2 routes, got %d", len(payload.Routes))
+	if len(payload.Routes) != 3 {
+		t.Fatalf("expected 3 routes, got %d", len(payload.Routes))
 	}
 
-	if payload.Routes[0].Path != "/api/lastfm" {
-		t.Fatalf("expected first route to be /api/lastfm, got %q", payload.Routes[0].Path)
+	if payload.Routes[0].Path != "/api/lastfm/:username" {
+		t.Fatalf("expected first route to be /api/lastfm/:username, got %q", payload.Routes[0].Path)
 	}
 
-	if payload.Routes[1].Path != "/api/views/:username" {
-		t.Fatalf("expected second route to be /api/views/:username, got %q", payload.Routes[1].Path)
+	if payload.Routes[1].Path != "/api/lastfm" {
+		t.Fatalf("expected second route to be /api/lastfm, got %q", payload.Routes[1].Path)
+	}
+
+	if payload.Routes[2].Path != "/api/views/:username" {
+		t.Fatalf("expected third route to be /api/views/:username, got %q", payload.Routes[2].Path)
 	}
 }
 
 func TestHandlerViewsAreScopedByUsername(t *testing.T) {
 	t.Parallel()
 
-	store, err := views.NewStore(filepath.Join(t.TempDir(), "views.db"))
-	if err != nil {
-		t.Fatalf("NewStore() error = %v", err)
-	}
-	defer func() {
-		if err := store.Close(); err != nil {
-			t.Fatalf("Close() error = %v", err)
-		}
-	}()
+	store := newTestStore(t)
 
 	server := NewServer(config.Config{
 		ViewHashSecret:   "test-secret",
 		RateLimitEnabled: false,
-	}, lastfm.NewClient("", "Kisakay", &http.Client{}), store)
+	}, &stubLastfmService{}, store)
 
 	post := httptest.NewRequest(http.MethodPost, "/api/views/kisakay", nil)
 	post.RemoteAddr = "127.0.0.1:1234"
@@ -124,20 +141,12 @@ func TestHandlerViewsAreScopedByUsername(t *testing.T) {
 func TestHandlerViewsRejectsInvalidUsername(t *testing.T) {
 	t.Parallel()
 
-	store, err := views.NewStore(filepath.Join(t.TempDir(), "views.db"))
-	if err != nil {
-		t.Fatalf("NewStore() error = %v", err)
-	}
-	defer func() {
-		if err := store.Close(); err != nil {
-			t.Fatalf("Close() error = %v", err)
-		}
-	}()
+	store := newTestStore(t)
 
 	server := NewServer(config.Config{
 		ViewHashSecret:   "test-secret",
 		RateLimitEnabled: false,
-	}, lastfm.NewClient("", "Kisakay", &http.Client{}), store)
+	}, &stubLastfmService{}, store)
 
 	request := httptest.NewRequest(http.MethodGet, "/api/views/not.valid", nil)
 	recorder := httptest.NewRecorder()
@@ -155,15 +164,7 @@ func TestHandlerViewsRejectsInvalidUsername(t *testing.T) {
 func TestHandlerViewsLegacyHashesDoNotDoubleCount(t *testing.T) {
 	t.Parallel()
 
-	store, err := views.NewStore(filepath.Join(t.TempDir(), "views.db"))
-	if err != nil {
-		t.Fatalf("NewStore() error = %v", err)
-	}
-	defer func() {
-		if err := store.Close(); err != nil {
-			t.Fatalf("Close() error = %v", err)
-		}
-	}()
+	store := newTestStore(t)
 
 	if _, _, err := store.ImportLegacy(
 		context.Background(),
@@ -176,7 +177,7 @@ func TestHandlerViewsLegacyHashesDoNotDoubleCount(t *testing.T) {
 	server := NewServer(config.Config{
 		ViewHashSecret:   "test-secret",
 		RateLimitEnabled: false,
-	}, lastfm.NewClient("", "Kisakay", &http.Client{}), store)
+	}, &stubLastfmService{}, store)
 
 	post := httptest.NewRequest(http.MethodPost, "/api/views/kisakay", nil)
 	post.RemoteAddr = "127.0.0.1:1234"
@@ -199,5 +200,110 @@ func TestHandlerViewsLegacyHashesDoNotDoubleCount(t *testing.T) {
 
 	if payload.Count != 1 {
 		t.Fatalf("expected count = 1 after legacy check, got %d", payload.Count)
+	}
+}
+
+func TestHandlerLastfmUsesUsernameFromPath(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t)
+	lastfmService := &stubLastfmService{
+		track: &lastfm.NowPlaying{
+			Title:     "Ghost Song",
+			Artist:    "Kisakay",
+			Timestamp: "live now",
+			URL:       "https://www.last.fm/music/Kisakay/_/Ghost+Song",
+			IsLive:    true,
+		},
+	}
+
+	server := NewServer(config.Config{
+		LastfmUser:       "fallback-user",
+		ViewHashSecret:   "test-secret",
+		RateLimitEnabled: false,
+	}, lastfmService, store)
+
+	request := httptest.NewRequest(http.MethodGet, "/api/lastfm/Test.User", nil)
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
+	}
+
+	if len(lastfmService.receivedUsernames) != 1 || lastfmService.receivedUsernames[0] != "test.user" {
+		t.Fatalf("expected normalized username to be passed to service, got %#v", lastfmService.receivedUsernames)
+	}
+
+	var payload lastfm.NowPlaying
+	if err := json.Unmarshal(recorder.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+
+	if payload.Title != "Ghost Song" {
+		t.Fatalf("expected track title to be returned, got %q", payload.Title)
+	}
+}
+
+func TestHandlerLastfmUsesDefaultUsernameWhenPathHasNoParam(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t)
+	lastfmService := &stubLastfmService{}
+
+	server := NewServer(config.Config{
+		LastfmUser:       "Default.User",
+		ViewHashSecret:   "test-secret",
+		RateLimitEnabled: false,
+	}, lastfmService, store)
+
+	request := httptest.NewRequest(http.MethodGet, "/api/lastfm", nil)
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, recorder.Code)
+	}
+
+	if len(lastfmService.receivedUsernames) != 1 || lastfmService.receivedUsernames[0] != "default.user" {
+		t.Fatalf("expected default username to be passed to service, got %#v", lastfmService.receivedUsernames)
+	}
+}
+
+func TestHandlerLastfmReturnsInternalServerErrorWhenCredentialsAreMissing(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t)
+	server := NewServer(config.Config{
+		LastfmUser:       "kisakay",
+		ViewHashSecret:   "test-secret",
+		RateLimitEnabled: false,
+	}, &stubLastfmService{err: lastfm.ErrMissingCredentials}, store)
+
+	request := httptest.NewRequest(http.MethodGet, "/api/lastfm/kisakay", nil)
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusInternalServerError {
+		t.Fatalf("expected status %d, got %d", http.StatusInternalServerError, recorder.Code)
+	}
+}
+
+func TestHandlerLastfmReturnsBadGatewayForUpstreamFailures(t *testing.T) {
+	t.Parallel()
+
+	store := newTestStore(t)
+	server := NewServer(config.Config{
+		LastfmUser:       "kisakay",
+		ViewHashSecret:   "test-secret",
+		RateLimitEnabled: false,
+	}, &stubLastfmService{err: errors.New("upstream failed")}, store)
+
+	request := httptest.NewRequest(http.MethodGet, "/api/lastfm/kisakay", nil)
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusBadGateway {
+		t.Fatalf("expected status %d, got %d", http.StatusBadGateway, recorder.Code)
 	}
 }

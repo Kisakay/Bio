@@ -50,8 +50,10 @@ const profileConfig: ProfileConfigSource = {
   ],
   api: {
     lastfmPath: '/api/lastfm',
+    lastfmUsername: 'Kisakay',
+    lastfmEnabled: true,
     viewsPath: '/api/views',
-    refreshIntervalMs: 60_000,
+    refreshIntervalMs: 240_000,
   },
   theme: {
     accent: '#ff7bc2',

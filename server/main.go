@@ -29,11 +29,22 @@ func main() {
 		}
 	}()
 
+	lastfmStore, err := lastfm.NewStore(cfg.ViewDatabasePath)
+	if err != nil {
+		log.Fatalf("unable to initialize lastfm store: %v", err)
+	}
+	defer func() {
+		if err := lastfmStore.Close(); err != nil {
+			log.Printf("unable to flush lastfm store: %v", err)
+		}
+	}()
+
 	lastfmClient := lastfm.NewClient(cfg.LastfmAPIKey, cfg.LastfmUser, &http.Client{
 		Timeout: 10 * time.Second,
 	})
+	lastfmService := lastfm.NewService(lastfmClient, lastfmStore, lastfm.DefaultCacheTTL)
 
-	server := web.NewServer(cfg, lastfmClient, viewStore)
+	server := web.NewServer(cfg, lastfmService, viewStore)
 	addr := ":" + cfg.Port
 	httpServer := &http.Server{
 		Addr:    addr,

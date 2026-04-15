@@ -16,9 +16,14 @@ type rootResponse struct {
 func apiRoutes() []routeDescriptor {
 	return []routeDescriptor{
 		{
+			Path:        "/api/lastfm/:username",
+			Methods:     []string{http.MethodGet},
+			Description: "Returns the current or most recent Last.fm track for a specific username.",
+		},
+		{
 			Path:        "/api/lastfm",
 			Methods:     []string{http.MethodGet},
-			Description: "Returns the current or most recent Last.fm track.",
+			Description: "Returns the current or most recent Last.fm track for the default configured username.",
 		},
 		{
 			Path:        "/api/views/:username",

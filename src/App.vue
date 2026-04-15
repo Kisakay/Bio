@@ -40,12 +40,16 @@ onMounted(() => {
   entered.value = false
   tiltEnabled.value = true
   startTitleAnimation()
-  void updateNowPlaying()
+  if (api.lastfmEnabled) {
+    void updateNowPlaying()
+  }
   void registerView()
 
-  refreshTimer = window.setInterval(() => {
-    void updateNowPlaying()
-  }, api.refreshIntervalMs)
+  if (api.lastfmEnabled) {
+    refreshTimer = window.setInterval(() => {
+      void updateNowPlaying()
+    }, api.refreshIntervalMs)
+  }
 
   if (supportsFinePointer) {
     customCursorEnabled.value = true
@@ -97,6 +101,10 @@ function startTitleAnimation() {
 }
 
 async function updateNowPlaying() {
+  if (!api.lastfmEnabled) {
+    return
+  }
+
   if (!lastfmTrack.value) {
     lastfmState.value = 'loading'
   }
@@ -515,7 +523,7 @@ function resetCardTilt() {
             </a>
           </nav>
 
-          <div class="activity">
+          <div v-if="api.lastfmEnabled" class="activity">
             <div class="activity__meta">
               <span>{{ content.nowPlayingLabel }}</span>
               <span>{{
