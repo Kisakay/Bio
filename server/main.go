@@ -19,7 +19,7 @@ import (
 func main() {
 	cfg := config.Load()
 
-	viewStore, err := views.NewStore(cfg.ViewStorePath)
+	viewStore, err := views.NewStore(cfg.ViewDatabasePath)
 	if err != nil {
 		log.Fatalf("unable to initialize view store: %v", err)
 	}

@@ -29,9 +29,23 @@ interface AppConfig {
 }
 
 const allowedIcons: SocialLink['icon'][] = ['discord', 'github', 'globe', 'youtube']
+const fallbackProfileUsername = 'kisakay'
 
 function sanitizePath(path: string) {
   return path.trim().replace(/^\.?\//, '')
+}
+
+function sanitizeProfileUsername(username: string) {
+  const trimmed = username.trim().toLowerCase()
+  if (/^[a-z0-9_-]+$/.test(trimmed)) {
+    return trimmed
+  }
+
+  return fallbackProfileUsername
+}
+
+function appendPathSegment(basePath: string, segment: string) {
+  return `${basePath.replace(/\/+$/, '')}/${segment.replace(/^\/+/, '')}`
 }
 
 function resolveAssetUrl(path: string) {
@@ -129,7 +143,10 @@ const theme = {
 }
 
 export const appConfig: AppConfig = {
-  content: profileConfig.content,
+  content: {
+    ...profileConfig.content,
+    username: sanitizeProfileUsername(profileConfig.content.username),
+  },
   assets: {
     backgroundVideoUrl: resolveAssetUrl(profileConfig.assets.backgroundVideoPath),
     bannerUrl: resolveAssetUrl(profileConfig.assets.bannerPath),
@@ -141,7 +158,10 @@ export const appConfig: AppConfig = {
   api: {
     baseUrl: resolveApiBaseUrl(import.meta.env.VITE_API_BASE_URL),
     lastfmPath: profileConfig.api.lastfmPath,
-    viewsPath: profileConfig.api.viewsPath,
+    viewsPath: appendPathSegment(
+      profileConfig.api.viewsPath,
+      sanitizeProfileUsername(profileConfig.content.username),
+    ),
     refreshIntervalMs: sanitizeNumber(profileConfig.api.refreshIntervalMs, 60_000),
   },
   theme,

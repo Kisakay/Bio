@@ -23,7 +23,7 @@ type Config struct {
 	LastfmAPIKey             string
 	LastfmUser               string
 	ViewHashSecret           string
-	ViewStorePath            string
+	ViewDatabasePath         string
 	Port                     string
 	RateLimitEnabled         bool
 	RateLimitRequests        int
@@ -42,7 +42,7 @@ func Load() Config {
 		LastfmAPIKey:             firstNonEmpty(os.Getenv("LASTFM_API_KEY"), os.Getenv("VITE_LASTFM_API_KEY")),
 		LastfmUser:               firstNonEmpty(os.Getenv("LASTFM_USERNAME"), defaultLastfmUser),
 		ViewHashSecret:           firstNonEmpty(os.Getenv("VIEW_HASH_SECRET"), os.Getenv("LASTFM_API_KEY"), os.Getenv("VITE_LASTFM_API_KEY"), "kisakay-dev-view-secret"),
-		ViewStorePath:            firstNonEmpty(os.Getenv("VIEW_STORE_PATH"), filepath.Join("server-data", "views.json")),
+		ViewDatabasePath:         firstNonEmpty(os.Getenv("VIEW_DATABASE_PATH"), os.Getenv("VIEW_STORE_PATH"), filepath.Join("server-data", "views.db")),
 		Port:                     firstNonEmpty(os.Getenv("PORT"), defaultPort),
 		RateLimitEnabled:         parseBoolEnv("RATE_LIMIT_ENABLED", true),
 		RateLimitRequests:        parseIntEnv("RATE_LIMIT_REQUESTS", defaultRateLimitRequests),

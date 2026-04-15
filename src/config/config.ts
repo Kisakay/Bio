@@ -2,6 +2,7 @@ import type { ProfileConfigSource } from './schema'
 
 const profileConfig: ProfileConfigSource = {
   content: {
+    username: 'kisakay',
     siteTitle: '@2h0 | Kisakay',
     enterButtonLabel: 'click here',
     enterButtonAriaLabel: 'Enter profile',

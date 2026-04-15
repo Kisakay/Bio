@@ -6,3 +6,6 @@ server/server-data
 server/server
 .env
 bun/*
+server/database.db
+server/database.db-shm
+server/database.db-wal

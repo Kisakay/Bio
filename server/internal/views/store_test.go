@@ -1,49 +1,17 @@
 package views
 
 import (
-	"encoding/json"
-	"os"
+	"context"
 	"path/filepath"
 	"testing"
-	"time"
 )
 
-func TestStoreCloseFlushesPendingHashes(t *testing.T) {
+func TestStoreCountsViewsPerUsername(t *testing.T) {
 	t.Parallel()
 
-	path := filepath.Join(t.TempDir(), "views.json")
-
-	store, err := newStore(path, time.Hour)
+	store, err := NewStore(filepath.Join(t.TempDir(), "views.db"))
 	if err != nil {
-		t.Fatalf("newStore() error = %v", err)
-	}
-
-	if _, _, err := store.Add("hash-a"); err != nil {
-		t.Fatalf("Add(hash-a) error = %v", err)
-	}
-
-	if _, _, err := store.Add("hash-b"); err != nil {
-		t.Fatalf("Add(hash-b) error = %v", err)
-	}
-
-	if err := store.Close(); err != nil {
-		t.Fatalf("Close() error = %v", err)
-	}
-
-	hashes := readHashes(t, path)
-	if len(hashes) != 2 {
-		t.Fatalf("expected 2 persisted hashes, got %d", len(hashes))
-	}
-}
-
-func TestStoreFlushLoopPersistsAsynchronously(t *testing.T) {
-	t.Parallel()
-
-	path := filepath.Join(t.TempDir(), "views.json")
-
-	store, err := newStore(path, 10*time.Millisecond)
-	if err != nil {
-		t.Fatalf("newStore() error = %v", err)
+		t.Fatalf("NewStore() error = %v", err)
 	}
 	defer func() {
 		if err := store.Close(); err != nil {
@@ -51,59 +19,104 @@ func TestStoreFlushLoopPersistsAsynchronously(t *testing.T) {
 		}
 	}()
 
-	added, count, err := store.Add("hash-a")
+	ctx := context.Background()
+
+	added, count, err := store.Add(ctx, "kisakay", "hash-a")
 	if err != nil {
-		t.Fatalf("Add(hash-a) error = %v", err)
+		t.Fatalf("Add(kisakay, hash-a) error = %v", err)
 	}
 
 	if !added || count != 1 {
-		t.Fatalf("expected first add to increment count, got added=%v count=%d", added, count)
+		t.Fatalf("expected first insert to increment count, got added=%v count=%d", added, count)
 	}
 
-	added, count, err = store.Add("hash-a")
+	added, count, err = store.Add(ctx, "kisakay", "hash-a")
 	if err != nil {
-		t.Fatalf("Add(duplicate) error = %v", err)
+		t.Fatalf("Add duplicate error = %v", err)
 	}
 
 	if added || count != 1 {
-		t.Fatalf("expected duplicate add to be ignored, got added=%v count=%d", added, count)
+		t.Fatalf("expected duplicate insert to be ignored, got added=%v count=%d", added, count)
 	}
 
-	waitForCount(t, path, 1)
-}
-
-func waitForCount(t *testing.T, path string, want int) {
-	t.Helper()
-
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		hashes := readHashes(t, path)
-		if len(hashes) == want {
-			return
-		}
-
-		time.Sleep(10 * time.Millisecond)
-	}
-
-	t.Fatalf("timed out waiting for %d persisted hashes in %s", want, path)
-}
-
-func readHashes(t *testing.T, path string) []string {
-	t.Helper()
-
-	data, err := os.ReadFile(path)
+	added, count, err = store.Add(ctx, "another-user", "hash-a")
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
+		t.Fatalf("Add(another-user, hash-a) error = %v", err)
+	}
+
+	if !added || count != 1 {
+		t.Fatalf("expected per-user counter isolation, got added=%v count=%d", added, count)
+	}
+
+	kisakayCount, err := store.Count(ctx, "kisakay")
+	if err != nil {
+		t.Fatalf("Count(kisakay) error = %v", err)
+	}
+
+	if kisakayCount != 1 {
+		t.Fatalf("expected kisakay count = 1, got %d", kisakayCount)
+	}
+}
+
+func TestNormalizeUsername(t *testing.T) {
+	t.Parallel()
+
+	got, err := NormalizeUsername("  KiSaKaY_123  ")
+	if err != nil {
+		t.Fatalf("NormalizeUsername() error = %v", err)
+	}
+
+	if got != "kisakay_123" {
+		t.Fatalf("expected normalized username to be kisakay_123, got %q", got)
+	}
+
+	if _, err := NormalizeUsername("not valid!"); err == nil {
+		t.Fatal("expected invalid username to return an error")
+	}
+}
+
+func TestHashViewerIncludesUsername(t *testing.T) {
+	t.Parallel()
+
+	hashA := HashViewer("kisakay", "127.0.0.1", "secret")
+	hashB := HashViewer("another-user", "127.0.0.1", "secret")
+
+	if hashA == hashB {
+		t.Fatal("expected username-scoped hashes to differ")
+	}
+}
+
+func TestStoreImportLegacyAndHasAny(t *testing.T) {
+	t.Parallel()
+
+	store, err := NewStore(filepath.Join(t.TempDir(), "views.db"))
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	defer func() {
+		if err := store.Close(); err != nil {
+			t.Fatalf("Close() error = %v", err)
 		}
+	}()
 
-		t.Fatalf("ReadFile(%s) error = %v", path, err)
+	ctx := context.Background()
+	legacyHash := HashIP("127.0.0.1", "secret")
+
+	imported, count, err := store.ImportLegacy(ctx, "kisakay", []string{legacyHash, legacyHash})
+	if err != nil {
+		t.Fatalf("ImportLegacy() error = %v", err)
 	}
 
-	var payload persisted
-	if err := json.Unmarshal(data, &payload); err != nil {
-		t.Fatalf("json.Unmarshal(%s) error = %v", path, err)
+	if imported != 1 || count != 1 {
+		t.Fatalf("expected imported=1 count=1, got imported=%d count=%d", imported, count)
 	}
 
-	return payload.Hashes
+	exists, err := store.HasAny(ctx, "kisakay", legacyHash, HashViewer("kisakay", "127.0.0.1", "secret"))
+	if err != nil {
+		t.Fatalf("HasAny() error = %v", err)
+	}
+
+	if !exists {
+		t.Fatal("expected legacy hash lookup to succeed")
+	}
 }

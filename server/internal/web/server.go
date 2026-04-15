@@ -35,7 +35,7 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.handleRoot)
 	mux.HandleFunc("/api/lastfm", s.handleLastfm)
-	mux.HandleFunc("/api/views", s.handleViews)
+	mux.HandleFunc("/api/views/", s.handleViewsByUsername)
 
 	var handler http.Handler = mux
 	if s.rateLimiter != nil {

@@ -1,117 +1,243 @@
 package views
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
-	"log"
 	"os"
 	"path/filepath"
-	"sort"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
-	"time"
+
+	_ "modernc.org/sqlite"
 )
 
-const defaultFlushInterval = 2 * time.Second
+var usernamePattern = regexp.MustCompile(`^[a-z0-9_-]+$`)
 
 type Store struct {
-	mu               sync.RWMutex
-	path             string
-	hashes           map[string]struct{}
-	version          uint64
-	persistedVersion uint64
-	flushInterval    time.Duration
-	stopCh           chan struct{}
-	doneCh           chan struct{}
-	closeOnce        sync.Once
-}
-
-type persisted struct {
-	Hashes []string `json:"hashes"`
+	db        *sql.DB
+	closeOnce sync.Once
 }
 
 func NewStore(path string) (*Store, error) {
-	return newStore(path, defaultFlushInterval)
-}
-
-func newStore(path string, flushInterval time.Duration) (*Store, error) {
-	if flushInterval <= 0 {
-		flushInterval = defaultFlushInterval
+	if strings.TrimSpace(path) == "" {
+		return nil, errors.New("view database path is required")
 	}
 
-	store := &Store{
-		path:          path,
-		hashes:        make(map[string]struct{}),
-		flushInterval: flushInterval,
-		stopCh:        make(chan struct{}),
-		doneCh:        make(chan struct{}),
-	}
-
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := ensureParentDir(path); err != nil {
 		return nil, err
 	}
 
-	data, err := os.ReadFile(path)
+	db, err := sql.Open("sqlite", path)
 	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			go store.flushLoop()
-			return store, nil
-		}
 		return nil, err
 	}
 
-	if len(data) == 0 {
-		go store.flushLoop()
-		return store, nil
-	}
-
-	var payload persisted
-	if err := json.Unmarshal(data, &payload); err != nil {
+	store := &Store{db: db}
+	if err := store.init(context.Background()); err != nil {
+		_ = db.Close()
 		return nil, err
 	}
-
-	for _, hash := range payload.Hashes {
-		trimmed := strings.TrimSpace(hash)
-		if trimmed == "" {
-			continue
-		}
-		store.hashes[trimmed] = struct{}{}
-	}
-
-	store.version = uint64(len(store.hashes))
-	store.persistedVersion = store.version
-	go store.flushLoop()
 
 	return store, nil
 }
 
-func (s *Store) Count() int {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+func ensureParentDir(path string) error {
+	if path == ":memory:" || strings.HasPrefix(path, "file:") {
+		return nil
+	}
 
-	return len(s.hashes)
+	parent := filepath.Dir(path)
+	if parent == "." || parent == "" {
+		return nil
+	}
+
+	return os.MkdirAll(parent, 0o755)
 }
 
-func (s *Store) Add(hash string) (bool, int, error) {
-	trimmed := strings.TrimSpace(hash)
-	if trimmed == "" {
-		return false, s.Count(), nil
+func (s *Store) init(ctx context.Context) error {
+	statements := []string{
+		`PRAGMA journal_mode = WAL;`,
+		`CREATE TABLE IF NOT EXISTS profile_views (
+			username TEXT NOT NULL,
+			visitor_hash TEXT NOT NULL,
+			created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (username, visitor_hash)
+		);`,
+		`CREATE INDEX IF NOT EXISTS idx_profile_views_username ON profile_views (username);`,
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if _, exists := s.hashes[trimmed]; exists {
-		return false, len(s.hashes), nil
+	for _, statement := range statements {
+		if _, err := s.db.ExecContext(ctx, statement); err != nil {
+			return err
+		}
 	}
 
-	s.hashes[trimmed] = struct{}{}
-	s.version++
+	return nil
+}
 
-	return true, len(s.hashes), nil
+func (s *Store) Count(ctx context.Context, username string) (int, error) {
+	normalized, err := NormalizeUsername(username)
+	if err != nil {
+		return 0, err
+	}
+
+	var count int
+	if err := s.db.QueryRowContext(
+		ctx,
+		`SELECT COUNT(*) FROM profile_views WHERE username = ?`,
+		normalized,
+	).Scan(&count); err != nil {
+		return 0, err
+	}
+
+	return count, nil
+}
+
+func (s *Store) Add(ctx context.Context, username, hash string) (bool, int, error) {
+	normalizedUsername, err := NormalizeUsername(username)
+	if err != nil {
+		return false, 0, err
+	}
+
+	trimmedHash := strings.TrimSpace(hash)
+	if trimmedHash == "" {
+		count, countErr := s.Count(ctx, normalizedUsername)
+		return false, count, countErr
+	}
+
+	result, err := s.db.ExecContext(
+		ctx,
+		`INSERT OR IGNORE INTO profile_views (username, visitor_hash) VALUES (?, ?)`,
+		normalizedUsername,
+		trimmedHash,
+	)
+	if err != nil {
+		return false, 0, err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return false, 0, err
+	}
+
+	count, err := s.Count(ctx, normalizedUsername)
+	if err != nil {
+		return false, 0, err
+	}
+
+	return rowsAffected > 0, count, nil
+}
+
+func (s *Store) HasAny(ctx context.Context, username string, hashes ...string) (bool, error) {
+	normalizedUsername, err := NormalizeUsername(username)
+	if err != nil {
+		return false, err
+	}
+
+	uniqueHashes := sanitizeHashes(hashes)
+	if len(uniqueHashes) == 0 {
+		return false, nil
+	}
+
+	placeholders := make([]string, 0, len(uniqueHashes))
+	args := make([]any, 0, len(uniqueHashes)+1)
+	args = append(args, normalizedUsername)
+
+	for index, hash := range uniqueHashes {
+		placeholders = append(placeholders, "?"+strconv.Itoa(index+2))
+		args = append(args, hash)
+	}
+
+	query := `SELECT EXISTS(
+		SELECT 1
+		FROM profile_views
+		WHERE username = ?1
+		  AND visitor_hash IN (` + strings.Join(placeholders, ", ") + `)
+	)`
+
+	var exists bool
+	if err := s.db.QueryRowContext(ctx, query, args...).Scan(&exists); err != nil {
+		return false, err
+	}
+
+	return exists, nil
+}
+
+func (s *Store) ImportLegacy(ctx context.Context, username string, hashes []string) (int, int, error) {
+	normalizedUsername, err := NormalizeUsername(username)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	legacyHashes := sanitizeHashes(hashes)
+	if len(legacyHashes) == 0 {
+		count, countErr := s.Count(ctx, normalizedUsername)
+		return 0, count, countErr
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+
+	statement, err := tx.PrepareContext(
+		ctx,
+		`INSERT OR IGNORE INTO profile_views (username, visitor_hash) VALUES (?, ?)`,
+	)
+	if err != nil {
+		return 0, 0, err
+	}
+	defer func() {
+		_ = statement.Close()
+	}()
+
+	imported := 0
+	for _, hash := range legacyHashes {
+		result, execErr := statement.ExecContext(ctx, normalizedUsername, hash)
+		if execErr != nil {
+			return 0, 0, execErr
+		}
+
+		rowsAffected, rowsErr := result.RowsAffected()
+		if rowsErr != nil {
+			return 0, 0, rowsErr
+		}
+
+		imported += int(rowsAffected)
+	}
+
+	count, err := countViews(ctx, tx, normalizedUsername)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, 0, err
+	}
+
+	return imported, count, nil
+}
+
+func NormalizeUsername(username string) (string, error) {
+	normalized := strings.TrimSpace(strings.ToLower(username))
+	if normalized == "" {
+		return "", errors.New("username is required")
+	}
+
+	if !usernamePattern.MatchString(normalized) {
+		return "", errors.New("username must use only letters, numbers, hyphens, or underscores")
+	}
+
+	return normalized, nil
 }
 
 func HashIP(ip, secret string) string {
@@ -120,86 +246,54 @@ func HashIP(ip, secret string) string {
 	return hex.EncodeToString(mac.Sum(nil))
 }
 
+func HashViewer(username, ip, secret string) string {
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write([]byte(strings.ToLower(strings.TrimSpace(username))))
+	_, _ = mac.Write([]byte{':'})
+	_, _ = mac.Write([]byte(ip))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
 func (s *Store) Close() error {
 	var err error
-
 	s.closeOnce.Do(func() {
-		close(s.stopCh)
-		<-s.doneCh
-		err = s.flush()
+		err = s.db.Close()
 	})
-
 	return err
 }
 
-func (s *Store) flushLoop() {
-	ticker := time.NewTicker(s.flushInterval)
-	defer func() {
-		ticker.Stop()
-		close(s.doneCh)
-	}()
+func countViews(ctx context.Context, querier interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}, username string) (int, error) {
+	var count int
+	if err := querier.QueryRowContext(
+		ctx,
+		`SELECT COUNT(*) FROM profile_views WHERE username = ?`,
+		username,
+	).Scan(&count); err != nil {
+		return 0, err
+	}
 
-	for {
-		select {
-		case <-ticker.C:
-			if err := s.flush(); err != nil {
-				log.Printf("view store flush error: %v", err)
-			}
-		case <-s.stopCh:
-			return
+	return count, nil
+}
+
+func sanitizeHashes(hashes []string) []string {
+	seen := make(map[string]struct{}, len(hashes))
+	sanitized := make([]string, 0, len(hashes))
+
+	for _, hash := range hashes {
+		trimmed := strings.TrimSpace(hash)
+		if trimmed == "" {
+			continue
 		}
-	}
-}
 
-func (s *Store) flush() error {
-	hashes, version := s.snapshot()
-	if hashes == nil {
-		return nil
-	}
+		if _, exists := seen[trimmed]; exists {
+			continue
+		}
 
-	if err := s.persistSnapshot(hashes); err != nil {
-		return err
+		seen[trimmed] = struct{}{}
+		sanitized = append(sanitized, trimmed)
 	}
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.persistedVersion < version {
-		s.persistedVersion = version
-	}
-
-	return nil
-}
-
-func (s *Store) snapshot() ([]string, uint64) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	if s.version == s.persistedVersion {
-		return nil, s.persistedVersion
-	}
-
-	hashes := make([]string, 0, len(s.hashes))
-	for hash := range s.hashes {
-		hashes = append(hashes, hash)
-	}
-
-	sort.Strings(hashes)
-
-	return hashes, s.version
-}
-
-func (s *Store) persistSnapshot(hashes []string) error {
-	payload := persisted{Hashes: hashes}
-	data, err := json.Marshal(payload)
-	if err != nil {
-		return err
-	}
-
-	tempPath := s.path + ".tmp"
-	if err := os.WriteFile(tempPath, data, 0o600); err != nil {
-		return err
-	}
-
-	return os.Rename(tempPath, s.path)
+	return sanitized
 }

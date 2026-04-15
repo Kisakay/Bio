@@ -21,6 +21,7 @@ export interface LastfmTrack {
 }
 
 export interface ProfileContent {
+  username: string
   siteTitle: string
   enterButtonLabel: string
   enterButtonAriaLabel: string

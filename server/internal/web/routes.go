@@ -21,9 +21,9 @@ func apiRoutes() []routeDescriptor {
 			Description: "Returns the current or most recent Last.fm track.",
 		},
 		{
-			Path:        "/api/views",
+			Path:        "/api/views/:username",
 			Methods:     []string{http.MethodGet, http.MethodPost},
-			Description: "Reads or increments the public view counter.",
+			Description: "Reads or increments the public view counter for a specific profile username.",
 		},
 	}
 }
