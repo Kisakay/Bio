@@ -416,7 +416,10 @@ function resetCardTilt() {
     <main class="profile" :class="{ 'profile--visible': entered }">
       <section
         class="profile-card"
-        :class="{ 'profile-card--tilting': cardTiltActive && tiltEnabled }"
+        :class="{
+          'profile-card--tilting': cardTiltActive && tiltEnabled,
+          'profile-card--compact': !api.lastfmEnabled,
+        }"
         :style="{
           '--card-rotate-x': `${cardRotateX}deg`,
           '--card-rotate-y': `${cardRotateY}deg`,
