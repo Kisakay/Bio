@@ -3,7 +3,7 @@ import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { appConfig, type LastfmTrack } from './config/appConfig'
 import './App.css'
 
-const { content, assets, socials, badges, api, themeStyles } = appConfig
+const { content, assets, socials, badges, api, themeStyles, features } = appConfig
 
 const entered = ref(false)
 const lastfmTrack = ref<LastfmTrack | null>(null)
@@ -37,13 +37,19 @@ let removeCursorListeners: (() => void) | undefined
 onMounted(() => {
   const supportsFinePointer = window.matchMedia('(hover: hover) and (pointer: fine)').matches
 
-  entered.value = false
-  tiltEnabled.value = true
-  startTitleAnimation()
+  entered.value = !features.entryScreenEnabled
+  tiltEnabled.value = features.cardTiltEnabled
+  if (features.animatedTitleEnabled) {
+    startTitleAnimation()
+  } else {
+    document.title = content.siteTitle
+  }
   if (api.lastfmEnabled) {
     void updateNowPlaying()
   }
-  void registerView()
+  if (features.viewCounterEnabled) {
+    void registerView()
+  }
 
   if (api.lastfmEnabled) {
     refreshTimer = window.setInterval(() => {
@@ -51,7 +57,7 @@ onMounted(() => {
     }, api.refreshIntervalMs)
   }
 
-  if (supportsFinePointer) {
+  if (features.customCursorEnabled && supportsFinePointer) {
     customCursorEnabled.value = true
     removeCursorListeners = attachCursorListeners()
   }
@@ -71,7 +77,9 @@ onBeforeUnmount(() => {
 
 function enterProfile() {
   entered.value = true
-  void playAudio()
+  if (features.playerEnabled) {
+    void playAudio()
+  }
 }
 
 function buildApiUrl(path: string) {
@@ -133,6 +141,10 @@ async function updateNowPlaying() {
 }
 
 async function registerView() {
+  if (!features.viewCounterEnabled) {
+    return
+  }
+
   viewState.value = 'loading'
 
   try {
@@ -163,6 +175,10 @@ async function registerView() {
 }
 
 async function fetchViewCount() {
+  if (!features.viewCounterEnabled) {
+    return
+  }
+
   try {
     const response = await fetch(buildApiUrl(api.viewsPath), {
       cache: 'no-store',
@@ -347,62 +363,31 @@ function resetCardTilt() {
 
 <template>
   <div class="scene" :class="{ 'scene--custom-cursor': customCursorEnabled }" :style="themeStyles">
-    <audio
-      ref="audioElement"
-      :src="assets.songUrl"
-      loop
-      preload="auto"
-      @canplay="handleAudioReady"
-      @error="handleAudioError"
-      @loadedmetadata="handleAudioMetadata"
-      @play="handleAudioPlay"
-      @pause="handleAudioPause"
-      @timeupdate="handleAudioTimeUpdate"
-    ></audio>
+    <audio v-if="features.playerEnabled" ref="audioElement" :src="assets.songUrl" loop preload="auto"
+      @canplay="handleAudioReady" @error="handleAudioError" @loadedmetadata="handleAudioMetadata"
+      @play="handleAudioPlay" @pause="handleAudioPause" @timeupdate="handleAudioTimeUpdate"></audio>
 
-    <video
-      class="scene__video"
-      :src="assets.backgroundVideoUrl"
-      autoplay
-      muted
-      loop
-      playsinline
-      preload="auto"
-      aria-hidden="true"
-    ></video>
+    <video class="scene__video" :src="assets.backgroundVideoUrl" autoplay muted loop playsinline preload="auto"
+      aria-hidden="true"></video>
     <div class="scene__wallpaper"></div>
     <div class="scene__vignette"></div>
     <div class="scene__grain"></div>
 
-    <button
-      v-if="!entered"
-      class="entry"
-      type="button"
-      :aria-label="content.enterButtonAriaLabel"
-      @click="enterProfile"
-    >
+    <button v-if="features.entryScreenEnabled && !entered" class="entry" type="button"
+      :aria-label="content.enterButtonAriaLabel" @click="enterProfile">
       <span class="entry__label">{{ content.enterButtonLabel }}</span>
     </button>
 
-    <div class="corner-player" :class="{ 'corner-player--visible': entered }">
-      <button
-        class="corner-player__button"
-        type="button"
-        :aria-pressed="audioPlaying"
-        :aria-label="audioPlaying ? content.audioPauseLabel : content.audioPlayLabel"
-        @click="toggleAudioPlayback"
-      >
+    <div v-if="features.playerEnabled" class="corner-player" :class="{ 'corner-player--visible': entered }">
+      <button class="corner-player__button" type="button" :aria-pressed="audioPlaying"
+        :aria-label="audioPlaying ? content.audioPauseLabel : content.audioPlayLabel" @click="toggleAudioPlayback">
         <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path
-            v-if="audioPlaying"
+          <path v-if="audioPlaying"
             d="M8 6.75C8 5.78 8.78 5 9.75 5s1.75.78 1.75 1.75v10.5C11.5 18.22 10.72 19 9.75 19S8 18.22 8 17.25V6.75Zm4.5 0C12.5 5.78 13.28 5 14.25 5S16 5.78 16 6.75v10.5c0 .97-.78 1.75-1.75 1.75s-1.75-.78-1.75-1.75V6.75Z"
-            fill="currentColor"
-          />
-          <path
-            v-else
+            fill="currentColor" />
+          <path v-else
             d="M9.18 6.58c0-1.07 1.17-1.73 2.08-1.18l6.67 4.06c.88.54.88 1.82 0 2.36l-6.67 4.06c-.91.55-2.08-.11-2.08-1.18V6.58Z"
-            fill="currentColor"
-          />
+            fill="currentColor" />
         </svg>
       </button>
       <div class="corner-player__copy">
@@ -414,24 +399,17 @@ function resetCardTilt() {
     </div>
 
     <main class="profile" :class="{ 'profile--visible': entered }">
-      <section
-        class="profile-card"
-        :class="{
-          'profile-card--tilting': cardTiltActive && tiltEnabled,
-          'profile-card--compact': !api.lastfmEnabled,
-        }"
-        :style="{
+      <section class="profile-card" :class="{
+        'profile-card--tilting': cardTiltActive && tiltEnabled,
+        'profile-card--compact': !api.lastfmEnabled,
+      }" :style="{
           '--card-rotate-x': `${cardRotateX}deg`,
           '--card-rotate-y': `${cardRotateY}deg`,
           '--card-shift-x': `${cardShiftX}px`,
           '--card-shift-y': `${cardShiftY}px`,
           '--card-glow-x': cardGlowX,
           '--card-glow-y': cardGlowY,
-        }"
-        @pointermove="handleCardPointerMove"
-        @pointerleave="resetCardTilt"
-        @pointercancel="resetCardTilt"
-      >
+        }" @pointermove="handleCardPointerMove" @pointerleave="resetCardTilt" @pointercancel="resetCardTilt">
         <div class="profile-card__banner">
           <img class="profile-card__banner-image" :src="assets.bannerUrl" :alt="content.bannerAlt" />
           <div class="profile-card__banner-shade"></div>
@@ -450,13 +428,8 @@ function resetCardTilt() {
             <div class="identity__heading">
               <h1>{{ content.handle }}</h1>
               <div class="identity__badges" :aria-label="content.badgesAriaLabel">
-                <span
-                  v-for="badge in badges"
-                  :key="badge.label"
-                  class="identity__badge"
-                  :title="badge.label"
-                  :aria-label="badge.label"
-                >
+                <span v-for="badge in badges" :key="badge.label" class="identity__badge" :title="badge.label"
+                  :aria-label="badge.label">
                   <img :src="badge.icon" :alt="badge.label" />
                 </span>
               </div>
@@ -465,13 +438,8 @@ function resetCardTilt() {
             <p class="identity__pronouns">{{ content.pronouns }}</p>
             <div class="identity__location" :aria-label="content.locationAriaLabel">
               <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path
-                  d="M12 21s6-4.35 6-10a6 6 0 1 0-12 0c0 5.65 6 10 6 10Z"
-                  stroke="currentColor"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="1.5"
-                />
+                <path d="M12 21s6-4.35 6-10a6 6 0 1 0-12 0c0 5.65 6 10 6 10Z" stroke="currentColor"
+                  stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" />
                 <circle cx="12" cy="11" r="2.25" stroke="currentColor" stroke-width="1.5" />
               </svg>
               <span>{{ content.location }}</span>
@@ -482,44 +450,21 @@ function resetCardTilt() {
           </div>
 
           <nav class="social-row" :aria-label="content.socialNavAriaLabel">
-            <a
-              v-for="link in socials"
-              :key="link.label"
-              :href="link.url"
-              class="social-row__link"
-              :aria-label="link.label"
-              target="_blank"
-              rel="noreferrer"
-            >
+            <a v-for="link in socials" :key="link.label" :href="link.url" class="social-row__link"
+              :aria-label="link.label" target="_blank" rel="noreferrer">
               <svg class="social-row__icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path
-                  v-if="link.icon === 'discord'"
+                <path v-if="link.icon === 'discord'"
                   d="M20.317 4.37a19.79 19.79 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.212.375-.444.864-.608 1.249a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.078.078 0 0 0-.079-.036A19.74 19.74 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.058a.082.082 0 0 0 .031.056 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.1 14.1 0 0 0 1.226-1.99.077.077 0 0 0-.041-.106 13 13 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .078-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .079.01c.12.099.245.196.372.292a.077.077 0 0 1-.006.128 12.3 12.3 0 0 1-1.873.892.077.077 0 0 0-.04.107c.36.698.772 1.362 1.225 1.989a.076.076 0 0 0 .084.028 19.85 19.85 0 0 0 6.002-3.03.077.077 0 0 0 .032-.055c.5-5.177-.838-9.669-3.549-13.66a.061.061 0 0 0-.031-.028ZM8.02 15.331c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.418 2.157-2.418 1.21 0 2.175 1.094 2.157 2.418 0 1.334-.956 2.419-2.157 2.419Zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.418 2.157-2.418 1.21 0 2.175 1.094 2.157 2.418 0 1.334-.947 2.419-2.157 2.419Z"
-                  fill="currentColor"
-                />
-                <path
-                  v-if="link.icon === 'github'"
+                  fill="currentColor" />
+                <path v-if="link.icon === 'github'"
                   d="M9 18.4c-3.75 1.12-3.75-1.88-5.25-2.25m10.5 4.5v-2.9c.03-.38-.06-.76-.25-1.1-.2-.34-.48-.63-.82-.84 2.78-.31 5.7-1.36 5.7-6.16a4.82 4.82 0 0 0-1.3-3.34 4.45 4.45 0 0 0-.08-3.3s-1.05-.31-3.45 1.28a11.8 11.8 0 0 0-6.3 0C5.35 2.7 4.3 3 4.3 3a4.45 4.45 0 0 0-.08 3.3 4.82 4.82 0 0 0-1.3 3.34c0 4.77 2.9 5.85 5.68 6.17-.34.2-.63.49-.82.84-.19.34-.28.72-.25 1.1v2.9"
-                  stroke="currentColor"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="1.45"
-                />
-                <path
-                  v-if="link.icon === 'globe'"
+                  stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.45" />
+                <path v-if="link.icon === 'globe'"
                   d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Zm0 0c2.33-2.46 3.66-5.72 3.75-9 0-3.28-1.42-6.54-3.75-9-2.33 2.46-3.66 5.72-3.75 9 .09 3.28 1.42 6.54 3.75 9ZM4 12h16"
-                  stroke="currentColor"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                  stroke-width="1.45"
-                />
-                <path
-                  v-if="link.icon === 'youtube'"
+                  stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.45" />
+                <path v-if="link.icon === 'youtube'"
                   d="M16.76 7.24c-2.78-.34-6.75-.34-9.52 0A2.7 2.7 0 0 0 4.9 9.48c-.2 1.68-.2 3.37 0 5.04a2.7 2.7 0 0 0 2.34 2.24c2.77.34 6.74.34 9.52 0a2.7 2.7 0 0 0 2.34-2.24c.2-1.67.2-3.36 0-5.04a2.7 2.7 0 0 0-2.34-2.24Z"
-                  stroke="currentColor"
-                  stroke-linejoin="round"
-                  stroke-width="1.45"
-                />
+                  stroke="currentColor" stroke-linejoin="round" stroke-width="1.45" />
                 <path v-if="link.icon === 'youtube'" d="m10.35 9.56 4.2 2.44-4.2 2.44V9.56Z" fill="currentColor" />
               </svg>
               <span class="sr-only">{{ link.label }}</span>
@@ -536,21 +481,12 @@ function resetCardTilt() {
               }}</span>
             </div>
             <div class="activity__content" :class="{ 'activity__content--offline': lastfmState === 'error' }">
-              <img
-                v-if="lastfmTrack?.artwork && lastfmState !== 'error'"
-                class="activity__art"
-                :src="lastfmTrack.artwork"
-                alt=""
-              />
+              <img v-if="lastfmTrack?.artwork && lastfmState !== 'error'" class="activity__art"
+                :src="lastfmTrack.artwork" alt="" />
               <div v-else-if="lastfmState === 'error'" class="activity__offline-orb" aria-hidden="true">
                 <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path
-                    d="M12 3.75 20.25 18a1.5 1.5 0 0 1-1.3 2.25H5.05A1.5 1.5 0 0 1 3.75 18L12 3.75Z"
-                    stroke="currentColor"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="1.5"
-                  />
+                  <path d="M12 3.75 20.25 18a1.5 1.5 0 0 1-1.3 2.25H5.05A1.5 1.5 0 0 1 3.75 18L12 3.75Z"
+                    stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" />
                   <path d="M12 9v4.5" stroke="currentColor" stroke-linecap="round" stroke-width="1.8" />
                   <circle cx="12" cy="16.5" r="1" fill="currentColor" />
                 </svg>
@@ -564,13 +500,8 @@ function resetCardTilt() {
                       : content.lastfmLoadingTitle)
                   }}
                 </strong>
-                <a
-                  v-if="lastfmTrack && lastfmState !== 'error'"
-                  class="activity__artist"
-                  :href="lastfmTrack.url"
-                  target="_blank"
-                  rel="noreferrer"
-                >
+                <a v-if="lastfmTrack && lastfmState !== 'error'" class="activity__artist" :href="lastfmTrack.url"
+                  target="_blank" rel="noreferrer">
                   {{ lastfmTrack.artist }}
                 </a>
                 <div v-else-if="lastfmState === 'error'" class="activity__status activity__status--offline">
@@ -586,15 +517,11 @@ function resetCardTilt() {
       </section>
     </main>
 
-    <div class="corner-views" :class="{ 'corner-views--visible': entered }" aria-live="polite">
+    <div v-if="features.viewCounterEnabled" class="corner-views" :class="{ 'corner-views--visible': entered }"
+      aria-live="polite">
       <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-        <path
-          d="M2.25 12s3.7-6.75 9.75-6.75S21.75 12 21.75 12s-3.7 6.75-9.75 6.75S2.25 12 2.25 12Z"
-          stroke="currentColor"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-          stroke-width="1.45"
-        />
+        <path d="M2.25 12s3.7-6.75 9.75-6.75S21.75 12 21.75 12s-3.7 6.75-9.75 6.75S2.25 12 2.25 12Z"
+          stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.45" />
         <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.45" />
       </svg>
       <div class="corner-views__copy">
@@ -602,17 +529,11 @@ function resetCardTilt() {
       </div>
     </div>
 
-    <div
-      v-if="customCursorEnabled"
-      class="cursor-layer"
-      :class="{
-        'cursor-layer--visible': cursorVisible,
-        'cursor-layer--interactive': cursorInteractive,
-        'cursor-layer--pressed': cursorPressed,
-      }"
-      :style="{ transform: `translate3d(${cursorX}px, ${cursorY}px, 0)` }"
-      aria-hidden="true"
-    >
+    <div v-if="customCursorEnabled && features.cursorHaloEnabled" class="cursor-layer" :class="{
+      'cursor-layer--visible': cursorVisible,
+      'cursor-layer--interactive': cursorInteractive,
+      'cursor-layer--pressed': cursorPressed,
+    }" :style="{ transform: `translate3d(${cursorX}px, ${cursorY}px, 0)` }" aria-hidden="true">
       <div class="cursor-layer__halo"></div>
       <div class="cursor-layer__glow"></div>
     </div>

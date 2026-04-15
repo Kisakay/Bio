@@ -66,6 +66,16 @@ export interface ProfileTheme {
   warningSoft: string
 }
 
+export interface ProfileFeatures {
+  customCursorEnabled: boolean
+  cursorHaloEnabled: boolean
+  cardTiltEnabled: boolean
+  entryScreenEnabled: boolean
+  playerEnabled: boolean
+  viewCounterEnabled: boolean
+  animatedTitleEnabled: boolean
+}
+
 export interface StaticApiConfig {
   lastfmPath: string
   lastfmUsername: string
@@ -79,6 +89,7 @@ export interface ProfileConfigSource {
   assets: ProfileAssets
   socials: SocialLink[]
   badges: ProfileBadge[]
+  features: ProfileFeatures
   api: StaticApiConfig
   theme: ProfileTheme
 }

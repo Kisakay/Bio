@@ -952,17 +952,17 @@
 }
 
 @media (pointer: fine) {
-  html,
-  body {
+  .scene--custom-cursor,
+  .scene--custom-cursor * {
     cursor: url('/assets/cursor/lionheart-pointer.cur') 1 1, auto;
   }
 
-  a,
-  button,
-  input,
-  textarea,
-  select,
-  [role='button'] {
+  .scene--custom-cursor a,
+  .scene--custom-cursor button,
+  .scene--custom-cursor input,
+  .scene--custom-cursor textarea,
+  .scene--custom-cursor select,
+  .scene--custom-cursor [role='button'] {
     cursor: url('/assets/cursor/lionheart-pointer.cur') 1 1, pointer;
   }
 }

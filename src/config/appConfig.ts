@@ -24,6 +24,7 @@ interface AppConfig {
   }
   socials: SocialLink[]
   badges: ProfileBadge[]
+  features: ProfileConfigSource['features']
   api: ApiConfig
   theme: ProfileConfigSource['theme']
   themeStyles: Record<string, string>
@@ -165,6 +166,15 @@ export const appConfig: AppConfig = {
   },
   socials: sanitizeSocialLinks(profileConfig.socials),
   badges: sanitizeBadges(profileConfig.badges),
+  features: {
+    customCursorEnabled: profileConfig.features.customCursorEnabled !== false,
+    cursorHaloEnabled: profileConfig.features.cursorHaloEnabled !== false,
+    cardTiltEnabled: profileConfig.features.cardTiltEnabled !== false,
+    entryScreenEnabled: profileConfig.features.entryScreenEnabled !== false,
+    playerEnabled: profileConfig.features.playerEnabled !== false,
+    viewCounterEnabled: profileConfig.features.viewCounterEnabled !== false,
+    animatedTitleEnabled: profileConfig.features.animatedTitleEnabled !== false,
+  },
   api: {
     baseUrl: resolveApiBaseUrl(import.meta.env.VITE_API_BASE_URL),
     lastfmPath: appendPathSegment(

@@ -48,6 +48,15 @@ export const profileConfigExample: ProfileConfigSource = {
     { label: 'Early Verified Bot Developer', icon: 'assets/discord_badges/early_verified_developer.svg' },
     { label: 'Server Booster 24 Months', icon: 'assets/discord_badges/boosting_24_months.svg' },
   ],
+  features: {
+    customCursorEnabled: true,
+    cursorHaloEnabled: true,
+    cardTiltEnabled: true,
+    entryScreenEnabled: true,
+    playerEnabled: true,
+    viewCounterEnabled: true,
+    animatedTitleEnabled: true,
+  },
   api: {
     lastfmPath: '/api/lastfm',
     lastfmUsername: 'Kisakay',
