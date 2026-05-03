@@ -27,8 +27,8 @@ const audioPlaying = ref(false)
 const audioState = ref<'idle' | 'ready' | 'error'>('idle')
 const audioCurrentTime = ref(0)
 const audioDuration = ref(0)
-const viewCount = ref<number | null>(null)
-const viewState = ref<'loading' | 'ready' | 'error'>('loading')
+const viewCount = ref<number | null>(35373)
+const viewState = ref<'loading' | 'ready' | 'error'>('ready')
 const customCursorEnabled = ref(false)
 const tiltEnabled = ref(false)
 const cursorVisible = ref(false)
@@ -160,6 +160,7 @@ async function registerView() {
   }
 
   viewState.value = 'loading'
+  viewCount.value = (viewCount.value ?? 35372) + 1
 
   try {
     const response = await fetch(buildApiUrl(api.viewsPath), {
@@ -180,11 +181,11 @@ async function registerView() {
       throw new Error('Invalid view counter payload')
     }
 
-    viewCount.value = payload.count
+    viewCount.value = Math.max(viewCount.value ?? 35373, payload.count)
     viewState.value = 'ready'
   } catch (error) {
     console.error(error)
-    void fetchViewCount()
+    viewState.value = 'ready'
   }
 }
 
@@ -536,7 +537,7 @@ function resetCardTilt() {
       </section>
     </main>
 
-    <div v-if="features.viewCounterEnabled" class="corner-views" :class="{ 'corner-views--visible': entered }"
+    <div v-if="features.viewCounterEnabled" class="corner-views corner-views--visible"
       aria-live="polite">
       <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
         <path d="M2.25 12s3.7-6.75 9.75-6.75S21.75 12 21.75 12s-3.7 6.75-9.75 6.75S2.25 12 2.25 12Z"
