@@ -1,561 +1,1028 @@
-<script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
-import { appConfig, type LastfmTrack } from './config/appConfig'
-import './App.css'
+:root {
+  --bg: #050505;
+  --panel: rgba(10, 10, 10, 0.56);
+  --panel-strong: rgba(16, 16, 18, 0.86);
+  --line: rgba(255, 255, 255, 0.11);
+  --text: #f5f3ef;
+  --muted: rgba(245, 243, 239, 0.7);
+  --shadow: 0 30px 80px rgba(0, 0, 0, 0.5);
+  --accent: #ff7bc2;
+  --accent-soft: #ffb7db;
+  --accent-strong: #ff4ba6;
+  --accent-rgb: 255 123 194;
+  --warning: #ffd86b;
+  --warning-soft: #ffe29a;
+  --warning-rgb: 255 216 107;
+}
 
-const { content, assets, socials, badges, api, themeStyles, features } = appConfig
-const hasSocialLinks = socials.length > 0
-const hasBadges = badges.length > 0
-const visibleIdentityDetailCount = [
-  features.displayNameEnabled,
-  features.pronounsEnabled,
-  features.locationEnabled,
-  features.bioEnabled,
-].filter(Boolean).length
-const cardSupplementCount =
-  visibleIdentityDetailCount +
-  (api.lastfmEnabled ? 1 : 0) +
-  (hasSocialLinks ? 1 : 0)
-const cardIsSparse = cardSupplementCount <= 2
-const cardIsMinimal = cardSupplementCount <= 1
+.scene {
+  position: relative;
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  overflow: hidden;
+  padding: 1rem;
+  background: #040404;
+}
 
-const entered = ref(false)
-const lastfmTrack = ref<LastfmTrack | null>(null)
-const lastfmState = ref<'loading' | 'ready' | 'error'>('loading')
-const audioElement = ref<HTMLAudioElement | null>(null)
-const audioPlaying = ref(false)
-const audioState = ref<'idle' | 'ready' | 'error'>('idle')
-const audioCurrentTime = ref(0)
-const audioDuration = ref(0)
-const viewCount = ref<number | null>(35373)
-const viewState = ref<'loading' | 'ready' | 'error'>('ready')
-const customCursorEnabled = ref(false)
-const tiltEnabled = ref(false)
-const cursorVisible = ref(false)
-const cursorPressed = ref(false)
-const cursorInteractive = ref(false)
-const cursorX = ref(0)
-const cursorY = ref(0)
-const cardTiltActive = ref(false)
-const cardRotateX = ref(0)
-const cardRotateY = ref(0)
-const cardShiftX = ref(0)
-const cardShiftY = ref(0)
-const cardGlowX = ref('50%')
-const cardGlowY = ref('24%')
+.scene__video,
+.scene__wallpaper,
+.scene__vignette,
+.scene__grain {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
 
-let refreshTimer: number | undefined
-let titleAnimationTimer: number | undefined
-let removeCursorListeners: (() => void) | undefined
+.scene__video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transform: scale(1.05);
+  filter: saturate(1.05) brightness(0.72);
+}
 
-onMounted(() => {
-  const supportsFinePointer = window.matchMedia('(hover: hover) and (pointer: fine)').matches
+.scene__wallpaper {
+  background:
+    radial-gradient(circle at 22% 18%, rgba(255, 255, 255, 0.08), transparent 24%),
+    linear-gradient(rgba(6, 6, 7, 0.24), rgba(6, 6, 7, 0.58));
+  backdrop-filter: blur(6px);
+}
 
-  entered.value = !features.entryScreenEnabled
-  tiltEnabled.value = features.cardTiltEnabled
-  if (features.animatedTitleEnabled) {
-    startTitleAnimation()
-  } else {
-    document.title = content.siteTitle
+.scene__vignette {
+  background:
+    radial-gradient(circle at center, transparent 22%, rgba(0, 0, 0, 0.38) 70%),
+    linear-gradient(180deg, rgba(0, 0, 0, 0.42), rgba(0, 0, 0, 0.55));
+}
+
+.scene__grain {
+  opacity: 0.18;
+  background-image:
+    radial-gradient(circle at 25% 20%, rgba(255, 255, 255, 0.08) 0 1px, transparent 1px),
+    radial-gradient(circle at 70% 35%, rgba(255, 255, 255, 0.05) 0 1px, transparent 1px),
+    radial-gradient(circle at 40% 75%, rgba(255, 255, 255, 0.06) 0 1px, transparent 1px);
+  background-size: 160px 160px;
+}
+
+.entry {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  border: 0;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at center, rgba(255, 255, 255, 0.08), transparent 26%),
+    linear-gradient(180deg, rgba(7, 7, 10, 0.18), rgba(7, 7, 10, 0.34));
+  color: var(--text);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.9rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  backdrop-filter: blur(18px) saturate(1.15);
+  -webkit-backdrop-filter: blur(18px) saturate(1.15);
+  cursor: pointer;
+  transition: background 180ms ease, backdrop-filter 180ms ease;
+}
+
+.entry::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+  background-size: 34px 34px;
+  opacity: 0.3;
+  pointer-events: none;
+}
+
+.entry__label {
+  position: relative;
+  z-index: 1;
+  padding: 1rem 1.35rem;
+  border: 1px solid rgb(var(--accent-rgb) / 0.22);
+  border-radius: 999px;
+  background: rgb(var(--accent-rgb) / 0.08);
+  color: rgba(245, 243, 239, 0.82);
+  box-shadow:
+    0 12px 36px rgba(0, 0, 0, 0.18),
+    inset 0 1px 0 rgb(var(--accent-rgb) / 0.18);
+  transition:
+    color 180ms ease,
+    background 180ms ease,
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    text-shadow 180ms ease,
+    transform 180ms ease;
+}
+
+.entry:hover {
+  background:
+    radial-gradient(circle at center, rgba(255, 255, 255, 0.12), transparent 28%),
+    linear-gradient(180deg, rgba(7, 7, 10, 0.12), rgba(7, 7, 10, 0.28));
+}
+
+.entry:hover .entry__label {
+  transform: translateY(-1px);
+  color: #ffffff;
+  background: linear-gradient(180deg, rgb(var(--accent-rgb) / 0.18), rgb(var(--accent-rgb) / 0.08));
+  border-color: rgb(var(--accent-rgb) / 0.42);
+  text-shadow: 0 0 18px rgb(var(--accent-rgb) / 0.42);
+  box-shadow:
+    0 18px 42px rgba(0, 0, 0, 0.22),
+    0 0 28px rgb(var(--accent-rgb) / 0.16),
+    inset 0 1px 0 rgb(var(--accent-rgb) / 0.24);
+}
+
+.corner-player,
+.corner-views {
+  position: fixed;
+  z-index: 22;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 20px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03)),
+    rgba(8, 8, 10, 0.36);
+  box-shadow:
+    0 20px 52px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(18px) saturate(1.1);
+  -webkit-backdrop-filter: blur(18px) saturate(1.1);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease,
+    border-color 180ms ease,
+    background 180ms ease;
+}
+
+.corner-player--visible,
+.corner-views--visible {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.corner-player {
+  top: 1rem;
+  left: 1rem;
+  min-width: 220px;
+  transform: translate3d(-12px, -8px, 0);
+}
+
+.corner-player__button {
+  flex: none;
+  width: 2.85rem;
+  height: 2.85rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text);
+  box-shadow:
+    0 12px 26px rgba(0, 0, 0, 0.18),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  transition:
+    transform 180ms ease,
+    border-color 180ms ease,
+    background 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.corner-player__button:hover {
+  transform: translateY(-1px);
+  border-color: rgb(var(--accent-rgb) / 0.3);
+  background: rgb(var(--accent-rgb) / 0.12);
+  box-shadow:
+    0 16px 32px rgba(0, 0, 0, 0.22),
+    0 0 18px rgb(var(--accent-rgb) / 0.12),
+    inset 0 1px 0 rgb(var(--accent-rgb) / 0.16);
+}
+
+.corner-player__button svg {
+  width: 1.15rem;
+  height: 1.15rem;
+}
+
+.corner-player__copy,
+.corner-views__copy {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.corner-player__copy span,
+.corner-views__copy span {
+  font-family: 'JetBrains Mono', monospace;
+  text-transform: uppercase;
+}
+
+.corner-player__copy span,
+.corner-views__copy span {
+  color: rgba(245, 243, 239, 0.58);
+  font-size: 0.6rem;
+  letter-spacing: 0.12em;
+}
+
+.corner-player__copy strong,
+.corner-views__copy strong {
+  color: var(--text);
+  font-size: 0.9rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.corner-player__progress {
+  position: relative;
+  width: 120px;
+  height: 4px;
+  margin-top: 0.22rem;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.corner-player__progress-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent-strong), var(--accent-soft));
+  box-shadow: 0 0 14px rgb(var(--accent-rgb) / 0.28);
+  transition: width 120ms linear;
+}
+
+.corner-views {
+  z-index: 22;
+  right: 1rem;
+  bottom: 1rem;
+  transform: translate3d(12px, 8px, 0);
+}
+
+.corner-views svg {
+  width: 1.2rem;
+  height: 1.2rem;
+  color: rgba(255, 255, 255, 0.9);
+  flex: none;
+}
+
+.corner-views__copy {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.corner-views__copy span {
+  font-size: 0.6rem;
+  letter-spacing: 0.12em;
+}
+
+.corner-views__copy strong {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.profile {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  perspective: 1800px;
+  opacity: 0;
+  transform: translateY(16px) scale(0.985);
+  transition: opacity 220ms ease, transform 220ms ease;
+}
+
+.profile--visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+}
+
+.profile-card {
+  --card-rotate-x: 0deg;
+  --card-rotate-y: 0deg;
+  --card-shift-x: 0px;
+  --card-shift-y: 0px;
+  --card-glow-x: 50%;
+  --card-glow-y: 24%;
+  width: min(100%, 380px);
+  min-height: 650px;
+  position: relative;
+  margin-inline: auto;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 26px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.03)),
+    var(--panel);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.035) inset,
+    0 1px 0 rgba(255, 255, 255, 0.06) inset,
+    var(--shadow);
+  backdrop-filter: blur(16px);
+  transform:
+    translate3d(var(--card-shift-x), var(--card-shift-y), 0)
+    rotateX(var(--card-rotate-x))
+    rotateY(var(--card-rotate-y));
+  transform-style: preserve-3d;
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease,
+    border-color 180ms ease;
+}
+
+.profile-card--compact {
+  min-height: 590px;
+}
+
+.profile-card--sparse {
+  width: min(100%, 380px);
+  min-height: 0;
+}
+
+.profile-card--minimal {
+  width: min(100%, 360px);
+  min-height: 0;
+}
+
+.profile-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 1px solid rgba(255, 255, 255, 0.035);
+  pointer-events: none;
+}
+
+.profile-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    radial-gradient(circle at var(--card-glow-x) var(--card-glow-y), rgb(var(--accent-rgb) / 0.28), transparent 28%),
+    linear-gradient(135deg, rgb(var(--accent-rgb) / 0.14), transparent 34%);
+  opacity: 0.5;
+  mix-blend-mode: screen;
+  pointer-events: none;
+  transition: opacity 180ms ease;
+}
+
+.profile-card--tilting {
+  border-color: rgb(var(--accent-rgb) / 0.28);
+  box-shadow:
+    0 0 0 1px rgb(var(--accent-rgb) / 0.08) inset,
+    0 1px 0 rgb(var(--accent-rgb) / 0.16) inset,
+    0 52px 140px rgba(0, 0, 0, 0.62),
+    0 0 40px rgb(var(--accent-rgb) / 0.12);
+}
+
+.profile-card--tilting::after {
+  opacity: 0.8;
+}
+
+.cursor-layer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 60;
+  opacity: 0;
+  pointer-events: none;
+  will-change: transform, opacity;
+  transition:
+    opacity 120ms ease,
+    transform 50ms linear;
+}
+
+.cursor-layer--visible {
+  opacity: 1;
+}
+
+.cursor-layer__halo,
+.cursor-layer__glow {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.cursor-layer__halo {
+  width: 136px;
+  height: 136px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgb(var(--accent-rgb) / 0.5) 0%, rgb(var(--accent-rgb) / 0.18) 30%, rgb(var(--accent-rgb) / 0.08) 54%, transparent 76%);
+  filter: blur(14px);
+  transform: translate(-66px, -66px);
+  mix-blend-mode: screen;
+}
+
+.cursor-layer__glow {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: radial-gradient(circle, var(--accent-soft), rgb(var(--accent-rgb) / 0.24) 60%, transparent 78%);
+  filter: blur(7px);
+  transform: translate(-8px, -8px);
+  opacity: 1;
+}
+
+.cursor-layer--interactive .cursor-layer__halo {
+  width: 168px;
+  height: 168px;
+  transform: translate(-82px, -82px);
+  background: radial-gradient(circle, rgb(var(--accent-rgb) / 0.62) 0%, rgb(var(--accent-rgb) / 0.22) 32%, rgb(var(--accent-rgb) / 0.08) 56%, transparent 76%);
+}
+
+.cursor-layer--interactive .cursor-layer__glow {
+  opacity: 1;
+  filter: blur(8px);
+}
+
+.cursor-layer--pressed .cursor-layer__halo {
+  transform: translate(-66px, -66px) scale(0.9);
+}
+
+.profile-card__banner {
+  position: relative;
+  height: 188px;
+  overflow: hidden;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.profile-card--minimal .profile-card__banner {
+  height: 172px;
+}
+
+.profile-card__banner::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), transparent 28%);
+}
+
+.profile-card__banner-grid,
+.profile-card__banner-image,
+.profile-card__banner-shade,
+.profile-card__banner-copy {
+  position: absolute;
+}
+
+.profile-card__banner-image {
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 42%;
+}
+
+.profile-card__banner-shade {
+  inset: 0;
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, 0.06), transparent 32%),
+    linear-gradient(180deg, transparent 36%, rgba(8, 8, 10, 0.82));
+}
+
+.profile-card__banner-grid {
+  inset: 0;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.045) 1px, transparent 1px);
+  background-size: 28px 28px;
+  opacity: 0.14;
+  mask-image: linear-gradient(180deg, rgba(0, 0, 0, 0.68), transparent 88%);
+}
+
+.profile-card__banner-copy {
+  inset: auto auto 1rem 1rem;
+  z-index: 2;
+  display: grid;
+  gap: 0.25rem;
+  text-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
+}
+
+.profile-card__banner-copy span,
+.profile-card__banner-copy strong {
+  text-transform: uppercase;
+}
+
+.profile-card__banner-copy span {
+  color: rgba(245, 243, 239, 0.58);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.62rem;
+  letter-spacing: 0.16em;
+}
+
+.profile-card__banner-copy strong {
+  color: rgba(255, 255, 255, 0.96);
+  font-family: 'Syne', sans-serif;
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+}
+
+.profile-card__body {
+  display: grid;
+  justify-items: center;
+  gap: 1rem;
+  padding: 0 1.2rem 1.25rem;
+}
+
+.profile-card__body--sparse {
+  gap: 0.85rem;
+  padding-bottom: 1.05rem;
+}
+
+.profile-card__body--minimal {
+  gap: 0.7rem;
+  padding-bottom: 0.9rem;
+}
+
+.avatar-ring {
+  width: 96px;
+  height: 96px;
+  margin-top: -3rem;
+  padding: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  box-shadow: 0 14px 38px rgba(0, 0, 0, 0.4);
+  position: relative;
+  z-index: 2;
+}
+
+.avatar-ring--minimal {
+  margin-top: -2.7rem;
+}
+
+.avatar-ring img {
+  width: 100%;
+  height: 100%;
+  border-radius: 999px;
+  object-fit: cover;
+}
+
+.identity {
+  text-align: center;
+}
+
+.identity--minimal {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.identity__heading {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.identity h1 {
+  margin: 0;
+  font-family: 'Syne', sans-serif;
+  font-size: clamp(2.6rem, 9vw, 3.4rem);
+  line-height: 0.9;
+}
+
+.identity__badges {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.28rem;
+  padding: 0.36rem 0.48rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.055);
+  box-shadow:
+    0 10px 22px rgba(0, 0, 0, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.identity__badge {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.45rem;
+  height: 1.45rem;
+  transition:
+    transform 180ms ease,
+    box-shadow 180ms ease;
+}
+
+.identity__badge img {
+  width: 1.15rem;
+  height: 1.15rem;
+  display: block;
+  object-fit: contain;
+  transition:
+    transform 180ms ease,
+    filter 180ms ease;
+}
+
+.identity__badge::after {
+  content: attr(aria-label);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 0.55rem);
+  transform: translateX(-50%) translateY(4px);
+  padding: 0.42rem 0.56rem;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  background: rgba(12, 12, 16, 0.92);
+  color: rgba(255, 255, 255, 0.92);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.58rem;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.24);
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease;
+}
+
+.identity__badge:hover {
+  transform: translateY(-1px);
+}
+
+.identity__badge:hover img {
+  transform: scale(1.06);
+  filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.18));
+}
+
+.identity__badge:hover::after {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.identity__subtitle,
+.identity__pronouns,
+.identity__bio,
+.activity span,
+.stats span,
+.badge-row span,
+.entry {
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.identity__subtitle {
+  margin: 0.45rem 0 0;
+  color: var(--text);
+  font-size: 0.92rem;
+}
+
+.identity__pronouns {
+  margin: 0.35rem 0 0;
+  color: var(--muted);
+  font-size: 0.68rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.identity__location {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-top: 0.7rem;
+  padding: 0.7rem 0.95rem;
+  border: 1px solid rgb(var(--accent-rgb) / 0.24);
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgb(var(--accent-rgb) / 0.08), rgb(var(--accent-rgb) / 0.04));
+  color: rgba(245, 243, 239, 0.88);
+  box-shadow:
+    0 10px 24px rgba(0, 0, 0, 0.12),
+    inset 0 1px 0 rgb(var(--accent-rgb) / 0.12);
+}
+
+.identity__location svg {
+  width: 0.95rem;
+  height: 0.95rem;
+  color: var(--accent-soft);
+}
+
+.identity__location span {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.identity__bio {
+  margin: 0.75rem auto 0;
+  max-width: 28ch;
+  color: var(--muted);
+  font-size: 0.75rem;
+  line-height: 1.7;
+  text-transform: lowercase;
+}
+
+.social-row,
+.badge-row,
+.stats {
+  display: grid;
+  gap: 0.7rem;
+  width: 100%;
+}
+
+.social-row {
+  display: inline-grid;
+  width: auto;
+  grid-auto-flow: column;
+  gap: 0.7rem;
+  margin: 0 auto;
+}
+
+.social-row__link,
+.badge-row span,
+.activity,
+.stats article {
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.social-row__link {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 3.25rem;
+  min-height: 3.25rem;
+  gap: 0.35rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 18px;
+  color: var(--text);
+  transition: transform 180ms ease, background 180ms ease, border-color 180ms ease;
+}
+
+.social-row__link:hover {
+  transform: translateY(-2px);
+  border-color: rgb(var(--accent-rgb) / 0.28);
+  background: rgb(var(--accent-rgb) / 0.1);
+}
+
+.social-row__icon {
+  width: 1.7rem;
+  height: 1.7rem;
+  color: #f8f5f0;
+  filter: drop-shadow(0 0 12px rgb(var(--accent-rgb) / 0.14));
+}
+
+.social-row__label {
+  color: rgba(245, 243, 239, 0.9);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: lowercase;
+}
+
+.badge-row {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.badge-row span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 0.64rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.activity {
+  width: 100%;
+  padding: 0.95rem 1rem;
+  border-radius: 18px;
+}
+
+.activity__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  color: var(--muted);
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.activity__content {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 0.85rem;
+  align-items: center;
+  margin-top: 0.7rem;
+}
+
+.activity__content--offline {
+  grid-template-columns: 58px minmax(0, 1fr);
+}
+
+.activity__art {
+  display: block;
+  width: 58px;
+  height: 58px;
+  border-radius: 14px;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 10px 24px rgba(0, 0, 0, 0.18);
+}
+
+.activity__offline-orb {
+  width: 58px;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgb(var(--warning-rgb) / 0.24);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgb(var(--warning-rgb) / 0.14), rgb(var(--warning-rgb) / 0.05)),
+    rgba(255, 255, 255, 0.03);
+  box-shadow:
+    inset 0 1px 0 rgb(var(--warning-rgb) / 0.14),
+    0 10px 24px rgba(0, 0, 0, 0.18);
+}
+
+.activity__offline-orb svg {
+  width: 26px;
+  height: 26px;
+  color: var(--warning);
+  filter: drop-shadow(0 0 10px rgb(var(--warning-rgb) / 0.2));
+}
+
+.activity__copy {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.16rem;
+  min-width: 0;
+  min-height: 58px;
+}
+
+.activity strong {
+  display: block;
+  margin: 0;
+  color: var(--text);
+  font-size: 0.96rem;
+  line-height: 1.28;
+  font-weight: 600;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.activity__copy--offline .activity__title--offline {
+  color: var(--warning-soft);
+  line-height: 1.2;
+}
+
+.activity__artist {
+  display: inline-block;
+  margin-top: 0;
+  color: var(--muted);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.activity__status {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 0;
+}
+
+.activity__status-label {
+  color: var(--warning);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.stats {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.stats article {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.95rem 0.9rem;
+  border-radius: 18px;
+  text-align: center;
+}
+
+.stats strong {
+  color: var(--text);
+  font-size: 0.96rem;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.stats span {
+  color: var(--muted);
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (max-width: 520px) {
+  .scene {
+    padding: 0.75rem;
   }
-  if (api.lastfmEnabled) {
-    void updateNowPlaying()
-  }
-  if (features.viewCounterEnabled) {
-    void registerView()
-  }
 
-  if (api.lastfmEnabled) {
-    refreshTimer = window.setInterval(() => {
-      void updateNowPlaying()
-    }, api.refreshIntervalMs)
+  .corner-player,
+  .corner-views {
+    padding: 0.75rem 0.8rem;
+    border-radius: 18px;
   }
 
-  if (features.customCursorEnabled && supportsFinePointer) {
-    customCursorEnabled.value = true
-    removeCursorListeners = attachCursorListeners()
-  }
-})
-
-onBeforeUnmount(() => {
-  if (refreshTimer) {
-    window.clearInterval(refreshTimer)
+  .corner-player {
+    top: 0.75rem;
+    left: 0.75rem;
+    min-width: 0;
   }
 
-  if (titleAnimationTimer) {
-    window.clearInterval(titleAnimationTimer)
+  .corner-views {
+    right: 0.75rem;
+    bottom: 0.75rem;
   }
 
-  removeCursorListeners?.()
-})
+  .profile-card {
+    min-height: 650px;
+    border-radius: 22px;
+  }
 
-function enterProfile() {
-  entered.value = true
-  if (features.playerEnabled) {
-    void playAudio()
+  .profile-card--compact {
+    min-height: 555px;
+  }
+
+  .profile-card--sparse {
+    width: min(100%, 392px);
+    min-height: 0;
+  }
+
+  .profile-card--minimal {
+    width: min(100%, 356px);
+    min-height: 0;
+  }
+
+  .profile-card__banner {
+    height: 170px;
+  }
+
+  .profile-card__body {
+    padding-inline: 0.95rem;
   }
 }
 
-function buildApiUrl(path: string) {
-  return new URL(path, `${api.baseUrl}/`).toString()
-}
-
-function startTitleAnimation() {
-  const frames = Array.from(
-    { length: content.siteTitle.length },
-    (_, index) => content.siteTitle.slice(0, content.siteTitle.length - index),
-  )
-  let frameIndex = 0
-  let direction = 1
-
-  document.title = frames[frameIndex]
-
-  titleAnimationTimer = window.setInterval(() => {
-    if (frameIndex === frames.length - 1) {
-      direction = -1
-    } else if (frameIndex === 0) {
-      direction = 1
-    }
-
-    frameIndex += direction
-    document.title = frames[frameIndex]
-  }, 200)
-}
-
-async function updateNowPlaying() {
-  if (!api.lastfmEnabled) {
-    return
-  }
-
-  if (!lastfmTrack.value) {
-    lastfmState.value = 'loading'
-  }
-
-  try {
-    const response = await fetch(buildApiUrl(api.lastfmPath), {
-      cache: 'no-store',
-    })
-
-    if (!response.ok) {
-      throw new Error(`Last.fm proxy request failed with ${response.status}`)
-    }
-
-    const payload = (await response.json()) as LastfmTrack | null
-
-    if (!payload) {
-      throw new Error('Unable to parse Last.fm scrobble')
-    }
-
-    lastfmTrack.value = payload
-    lastfmState.value = 'ready'
-  } catch (error) {
-    console.error(error)
-    lastfmState.value = 'error'
+@media (prefers-reduced-motion: reduce) {
+  .profile,
+  .social-row__link {
+    transition: none;
   }
 }
 
-async function registerView() {
-  if (!features.viewCounterEnabled) {
-    return
+@media (pointer: fine) {
+  .scene--custom-cursor,
+  .scene--custom-cursor * {
+    cursor: url('/assets/cursor/lionheart-pointer.cur') 1 1, auto;
   }
 
-  viewState.value = 'loading'
-  viewCount.value = (viewCount.value ?? 35372) + 1
-
-  try {
-    const response = await fetch(buildApiUrl(api.viewsPath), {
-      method: 'POST',
-      headers: {
-        Accept: 'application/json',
-      },
-      cache: 'no-store',
-    })
-
-    if (!response.ok) {
-      throw new Error(`View counter request failed with ${response.status}`)
-    }
-
-    const payload = (await response.json()) as { count?: unknown }
-
-    if (typeof payload.count !== 'number') {
-      throw new Error('Invalid view counter payload')
-    }
-
-    viewCount.value = Math.max(viewCount.value ?? 35373, payload.count)
-    viewState.value = 'ready'
-  } catch (error) {
-    console.error(error)
-    viewState.value = 'ready'
+  .scene--custom-cursor a,
+  .scene--custom-cursor button,
+  .scene--custom-cursor input,
+  .scene--custom-cursor textarea,
+  .scene--custom-cursor select,
+  .scene--custom-cursor [role='button'] {
+    cursor: url('/assets/cursor/lionheart-pointer.cur') 1 1, pointer;
   }
 }
-
-async function fetchViewCount() {
-  if (!features.viewCounterEnabled) {
-    return
-  }
-
-  try {
-    const response = await fetch(buildApiUrl(api.viewsPath), {
-      cache: 'no-store',
-    })
-
-    if (!response.ok) {
-      throw new Error(`View counter fallback failed with ${response.status}`)
-    }
-
-    const payload = (await response.json()) as { count?: unknown }
-
-    if (typeof payload.count !== 'number') {
-      throw new Error('Invalid fallback view counter payload')
-    }
-
-    viewCount.value = payload.count
-    viewState.value = 'ready'
-  } catch (error) {
-    console.error(error)
-    viewState.value = 'error'
-  }
-}
-
-async function playAudio() {
-  if (!audioElement.value) {
-    return
-  }
-
-  try {
-    await audioElement.value.play()
-  } catch (error) {
-    console.error(error)
-  }
-}
-
-function toggleAudioPlayback() {
-  if (!audioElement.value) {
-    return
-  }
-
-  if (audioElement.value.paused) {
-    void playAudio()
-    return
-  }
-
-  audioElement.value.pause()
-}
-
-function handleAudioReady() {
-  audioState.value = 'ready'
-}
-
-function handleAudioPlay() {
-  audioPlaying.value = true
-}
-
-function handleAudioPause() {
-  audioPlaying.value = false
-}
-
-function handleAudioError() {
-  audioState.value = 'error'
-}
-
-function handleAudioTimeUpdate() {
-  if (!audioElement.value) {
-    return
-  }
-
-  audioCurrentTime.value = audioElement.value.currentTime
-}
-
-function handleAudioMetadata() {
-  if (!audioElement.value) {
-    return
-  }
-
-  audioDuration.value = Number.isFinite(audioElement.value.duration)
-    ? audioElement.value.duration
-    : 0
-}
-
-function getAudioProgress() {
-  if (!audioDuration.value || audioState.value === 'error') {
-    return '0%'
-  }
-
-  const progress = Math.min(audioCurrentTime.value / audioDuration.value, 1)
-  return `${progress * 100}%`
-}
-
-function formatViewCount(count: number | null) {
-  if (count === null) {
-    return viewState.value === 'error'
-      ? content.viewsOfflineLabel
-      : content.viewsLoadingLabel
-  }
-
-  return new Intl.NumberFormat(content.numberLocale).format(count)
-}
-
-function attachCursorListeners() {
-  const handleMouseMove = (event: MouseEvent) => {
-    cursorX.value = event.clientX
-    cursorY.value = event.clientY
-    cursorVisible.value = true
-    cursorInteractive.value = isInteractiveTarget(event.target)
-  }
-
-  const handlePointerDown = () => {
-    cursorPressed.value = true
-  }
-
-  const handlePointerUp = (event: PointerEvent) => {
-    cursorPressed.value = false
-    cursorInteractive.value = isInteractiveTarget(event.target)
-  }
-
-  const handlePointerLeave = () => {
-    cursorVisible.value = false
-    cursorPressed.value = false
-    cursorInteractive.value = false
-  }
-
-  window.addEventListener('mousemove', handleMouseMove)
-  window.addEventListener('pointerdown', handlePointerDown)
-  window.addEventListener('pointerup', handlePointerUp)
-  window.addEventListener('blur', handlePointerLeave)
-  document.addEventListener('mouseleave', handlePointerLeave)
-
-  return () => {
-    window.removeEventListener('mousemove', handleMouseMove)
-    window.removeEventListener('pointerdown', handlePointerDown)
-    window.removeEventListener('pointerup', handlePointerUp)
-    window.removeEventListener('blur', handlePointerLeave)
-    document.removeEventListener('mouseleave', handlePointerLeave)
-  }
-}
-
-function isInteractiveTarget(target: EventTarget | null) {
-  return target instanceof Element && !!target.closest('a, button, [role="button"]')
-}
-
-function handleCardPointerMove(event: PointerEvent) {
-  if (!tiltEnabled.value) {
-    return
-  }
-
-  const target = event.currentTarget
-
-  if (!(target instanceof HTMLElement)) {
-    return
-  }
-
-  const rect = target.getBoundingClientRect()
-  const relativeX = (event.clientX - rect.left) / rect.width
-  const relativeY = (event.clientY - rect.top) / rect.height
-  const offsetX = relativeX - 0.5
-  const offsetY = relativeY - 0.5
-  const edgeBoostX = Math.sign(offsetX) * Math.pow(Math.abs(offsetX) * 2, 1.8)
-  const edgeBoostY = Math.sign(offsetY) * Math.pow(Math.abs(offsetY) * 2, 1.8)
-
-  cardTiltActive.value = true
-  cardRotateY.value = edgeBoostX * 24
-  cardRotateX.value = edgeBoostY * -22
-  cardShiftX.value = edgeBoostX * 20
-  cardShiftY.value = edgeBoostY * 18
-  cardGlowX.value = `${relativeX * 100}%`
-  cardGlowY.value = `${relativeY * 100}%`
-}
-
-function resetCardTilt() {
-  cardTiltActive.value = false
-  cardRotateX.value = 0
-  cardRotateY.value = 0
-  cardShiftX.value = 0
-  cardShiftY.value = 0
-  cardGlowX.value = '50%'
-  cardGlowY.value = '24%'
-}
-</script>
-
-<template>
-  <div class="scene" :class="{ 'scene--custom-cursor': customCursorEnabled }" :style="themeStyles">
-    <audio v-if="features.playerEnabled" ref="audioElement" :src="assets.songUrl" loop preload="auto"
-      @canplay="handleAudioReady" @error="handleAudioError" @loadedmetadata="handleAudioMetadata"
-      @play="handleAudioPlay" @pause="handleAudioPause" @timeupdate="handleAudioTimeUpdate"></audio>
-
-    <video class="scene__video" :src="assets.backgroundVideoUrl" autoplay muted loop playsinline preload="auto"
-      aria-hidden="true"></video>
-    <div class="scene__wallpaper"></div>
-    <div class="scene__vignette"></div>
-    <div class="scene__grain"></div>
-
-    <button v-if="features.entryScreenEnabled && !entered" class="entry" type="button"
-      :aria-label="content.enterButtonAriaLabel" @click="enterProfile">
-      <span class="entry__label">{{ content.enterButtonLabel }}</span>
-    </button>
-
-    <div v-if="features.playerEnabled" class="corner-player" :class="{ 'corner-player--visible': entered }">
-      <button class="corner-player__button" type="button" :aria-pressed="audioPlaying"
-        :aria-label="audioPlaying ? content.audioPauseLabel : content.audioPlayLabel" @click="toggleAudioPlayback">
-        <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path v-if="audioPlaying"
-            d="M8 6.75C8 5.78 8.78 5 9.75 5s1.75.78 1.75 1.75v10.5C11.5 18.22 10.72 19 9.75 19S8 18.22 8 17.25V6.75Zm4.5 0C12.5 5.78 13.28 5 14.25 5S16 5.78 16 6.75v10.5c0 .97-.78 1.75-1.75 1.75s-1.75-.78-1.75-1.75V6.75Z"
-            fill="currentColor" />
-          <path v-else
-            d="M9.18 6.58c0-1.07 1.17-1.73 2.08-1.18l6.67 4.06c.88.54.88 1.82 0 2.36l-6.67 4.06c-.91.55-2.08-.11-2.08-1.18V6.58Z"
-            fill="currentColor" />
-        </svg>
-      </button>
-      <div class="corner-player__copy">
-        <strong>{{ content.playerTrackLabel }}</strong>
-        <div class="corner-player__progress" aria-hidden="true">
-          <span class="corner-player__progress-fill" :style="{ width: getAudioProgress() }"></span>
-        </div>
-      </div>
-    </div>
-
-    <main class="profile" :class="{ 'profile--visible': entered }">
-      <section class="profile-card" :class="{
-        'profile-card--tilting': cardTiltActive && tiltEnabled,
-        'profile-card--compact': !api.lastfmEnabled,
-        'profile-card--sparse': cardIsSparse,
-        'profile-card--minimal': cardIsMinimal,
-      }" :style="{
-          '--card-rotate-x': `${cardRotateX}deg`,
-          '--card-rotate-y': `${cardRotateY}deg`,
-          '--card-shift-x': `${cardShiftX}px`,
-          '--card-shift-y': `${cardShiftY}px`,
-          '--card-glow-x': cardGlowX,
-          '--card-glow-y': cardGlowY,
-        }" @pointermove="handleCardPointerMove" @pointerleave="resetCardTilt" @pointercancel="resetCardTilt">
-        <div class="profile-card__banner">
-          <img class="profile-card__banner-image" :src="assets.bannerUrl" :alt="content.bannerAlt" />
-          <div class="profile-card__banner-shade"></div>
-          <div class="profile-card__banner-grid"></div>
-          <div class="profile-card__banner-copy">
-            <span>{{ content.bannerLabel }}</span>
-          </div>
-        </div>
-
-        <div class="profile-card__body" :class="{
-          'profile-card__body--sparse': cardIsSparse,
-          'profile-card__body--minimal': cardIsMinimal,
-        }">
-          <div class="avatar-ring" :class="{ 'avatar-ring--minimal': cardIsMinimal }">
-            <img :src="assets.avatarUrl" :alt="content.avatarAlt" />
-          </div>
-
-          <div class="identity" :class="{ 'identity--minimal': cardIsMinimal }">
-            <div class="identity__heading">
-              <h1>{{ content.handle }}</h1>
-              <div v-if="hasBadges" class="identity__badges" :aria-label="content.badgesAriaLabel">
-                <span v-for="badge in badges" :key="badge.label" class="identity__badge" :title="badge.label"
-                  :aria-label="badge.label">
-                  <img :src="badge.icon" :alt="badge.label" />
-                </span>
-              </div>
-            </div>
-            <p v-if="features.displayNameEnabled" class="identity__subtitle">{{ content.displayName }}</p>
-            <p v-if="features.pronounsEnabled" class="identity__pronouns">{{ content.pronouns }}</p>
-            <div v-if="features.locationEnabled" class="identity__location" :aria-label="content.locationAriaLabel">
-              <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path d="M12 21s6-4.35 6-10a6 6 0 1 0-12 0c0 5.65 6 10 6 10Z" stroke="currentColor"
-                  stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" />
-                <circle cx="12" cy="11" r="2.25" stroke="currentColor" stroke-width="1.5" />
-              </svg>
-              <span>{{ content.location }}</span>
-            </div>
-            <p v-if="features.bioEnabled" class="identity__bio">
-              {{ content.bio }}
-            </p>
-          </div>
-
-          <nav v-if="hasSocialLinks" class="social-row" :aria-label="content.socialNavAriaLabel">
-            <a v-for="link in socials" :key="link.label" :href="link.url" class="social-row__link"
-              :aria-label="link.label" target="_blank" rel="noreferrer">
-              <svg class="social-row__icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                <path v-if="link.icon === 'discord'"
-                  d="M20.317 4.37a19.79 19.79 0 0 0-4.885-1.515.074.074 0 0 0-.079.037c-.212.375-.444.864-.608 1.249a18.27 18.27 0 0 0-5.487 0 12.64 12.64 0 0 0-.617-1.25.078.078 0 0 0-.079-.036A19.74 19.74 0 0 0 3.677 4.37a.07.07 0 0 0-.032.027C.533 9.046-.32 13.58.099 18.058a.082.082 0 0 0 .031.056 19.9 19.9 0 0 0 5.993 3.03.078.078 0 0 0 .084-.028 14.1 14.1 0 0 0 1.226-1.99.077.077 0 0 0-.041-.106 13 13 0 0 1-1.872-.892.077.077 0 0 1-.008-.128 10.2 10.2 0 0 0 .372-.292.074.074 0 0 1 .078-.01c3.928 1.793 8.18 1.793 12.062 0a.074.074 0 0 1 .079.01c.12.099.245.196.372.292a.077.077 0 0 1-.006.128 12.3 12.3 0 0 1-1.873.892.077.077 0 0 0-.04.107c.36.698.772 1.362 1.225 1.989a.076.076 0 0 0 .084.028 19.85 19.85 0 0 0 6.002-3.03.077.077 0 0 0 .032-.055c.5-5.177-.838-9.669-3.549-13.66a.061.061 0 0 0-.031-.028ZM8.02 15.331c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.418 2.157-2.418 1.21 0 2.175 1.094 2.157 2.418 0 1.334-.956 2.419-2.157 2.419Zm7.975 0c-1.183 0-2.157-1.085-2.157-2.419 0-1.333.955-2.418 2.157-2.418 1.21 0 2.175 1.094 2.157 2.418 0 1.334-.947 2.419-2.157 2.419Z"
-                  fill="currentColor" />
-                <path v-if="link.icon === 'github'"
-                  d="M9 18.4c-3.75 1.12-3.75-1.88-5.25-2.25m10.5 4.5v-2.9c.03-.38-.06-.76-.25-1.1-.2-.34-.48-.63-.82-.84 2.78-.31 5.7-1.36 5.7-6.16a4.82 4.82 0 0 0-1.3-3.34 4.45 4.45 0 0 0-.08-3.3s-1.05-.31-3.45 1.28a11.8 11.8 0 0 0-6.3 0C5.35 2.7 4.3 3 4.3 3a4.45 4.45 0 0 0-.08 3.3 4.82 4.82 0 0 0-1.3 3.34c0 4.77 2.9 5.85 5.68 6.17-.34.2-.63.49-.82.84-.19.34-.28.72-.25 1.1v2.9"
-                  stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.45" />
-                <path v-if="link.icon === 'globe'"
-                  d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Zm0 0c2.33-2.46 3.66-5.72 3.75-9 0-3.28-1.42-6.54-3.75-9-2.33 2.46-3.66 5.72-3.75 9 .09 3.28 1.42 6.54 3.75 9ZM4 12h16"
-                  stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.45" />
-                <path v-if="link.icon === 'youtube'"
-                  d="M16.76 7.24c-2.78-.34-6.75-.34-9.52 0A2.7 2.7 0 0 0 4.9 9.48c-.2 1.68-.2 3.37 0 5.04a2.7 2.7 0 0 0 2.34 2.24c2.77.34 6.74.34 9.52 0a2.7 2.7 0 0 0 2.34-2.24c.2-1.67.2-3.36 0-5.04a2.7 2.7 0 0 0-2.34-2.24Z"
-                  stroke="currentColor" stroke-linejoin="round" stroke-width="1.45" />
-                <path v-if="link.icon === 'youtube'" d="m10.35 9.56 4.2 2.44-4.2 2.44V9.56Z" fill="currentColor" />
-              </svg>
-              <span class="sr-only">{{ link.label }}</span>
-            </a>
-          </nav>
-
-          <div v-if="api.lastfmEnabled" class="activity">
-            <div class="activity__meta">
-              <span>{{ content.nowPlayingLabel }}</span>
-              <span>{{
-                lastfmState === 'error'
-                  ? content.lastfmServiceStatusLabel
-                  : lastfmTrack?.timestamp ?? content.lastfmLoadingTimestampLabel
-              }}</span>
-            </div>
-            <div class="activity__content" :class="{ 'activity__content--offline': lastfmState === 'error' }">
-              <img v-if="lastfmTrack?.artwork && lastfmState !== 'error'" class="activity__art"
-                :src="lastfmTrack.artwork" alt="" />
-              <div v-else-if="lastfmState === 'error'" class="activity__offline-orb" aria-hidden="true">
-                <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-                  <path d="M12 3.75 20.25 18a1.5 1.5 0 0 1-1.3 2.25H5.05A1.5 1.5 0 0 1 3.75 18L12 3.75Z"
-                    stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" />
-                  <path d="M12 9v4.5" stroke="currentColor" stroke-linecap="round" stroke-width="1.8" />
-                  <circle cx="12" cy="16.5" r="1" fill="currentColor" />
-                </svg>
-              </div>
-              <div class="activity__copy" :class="{ 'activity__copy--offline': lastfmState === 'error' }">
-                <strong :class="{ 'activity__title--offline': lastfmState === 'error' }">
-                  {{
-                    lastfmTrack?.title ??
-                    (lastfmState === 'error'
-                      ? content.lastfmUnavailableTitle
-                      : content.lastfmLoadingTitle)
-                  }}
-                </strong>
-                <a v-if="lastfmTrack && lastfmState !== 'error'" class="activity__artist" :href="lastfmTrack.url"
-                  target="_blank" rel="noreferrer">
-                  {{ lastfmTrack.artist }}
-                </a>
-                <div v-else-if="lastfmState === 'error'" class="activity__status activity__status--offline">
-                  <span class="activity__status-label">{{ content.lastfmOfflineLabel }}</span>
-                </div>
-                <span v-else class="activity__artist">
-                  {{ content.lastfmFallbackArtist }}
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-    </main>
-
-    <div v-if="features.viewCounterEnabled" class="corner-views corner-views--visible"
-      aria-live="polite">
-      <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
-        <path d="M2.25 12s3.7-6.75 9.75-6.75S21.75 12 21.75 12s-3.7 6.75-9.75 6.75S2.25 12 2.25 12Z"
-          stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.45" />
-        <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="1.45" />
-      </svg>
-      <div class="corner-views__copy">
-        <strong>{{ formatViewCount(viewCount) }}</strong>
-      </div>
-    </div>
-
-    <div v-if="customCursorEnabled && features.cursorHaloEnabled" class="cursor-layer" :class="{
-      'cursor-layer--visible': cursorVisible,
-      'cursor-layer--interactive': cursorInteractive,
-      'cursor-layer--pressed': cursorPressed,
-    }" :style="{ transform: `translate3d(${cursorX}px, ${cursorY}px, 0)` }" aria-hidden="true">
-      <div class="cursor-layer__halo"></div>
-      <div class="cursor-layer__glow"></div>
-    </div>
-  </div>
-</template>
