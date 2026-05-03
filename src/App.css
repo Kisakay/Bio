@@ -311,8 +311,8 @@
   --card-shift-y: 0px;
   --card-glow-x: 50%;
   --card-glow-y: 24%;
-  width: min(100%, 420px);
-  min-height: 690px;
+  width: min(100%, 380px);
+  min-height: 650px;
   position: relative;
   margin-inline: auto;
   overflow: hidden;
@@ -342,12 +342,12 @@
 }
 
 .profile-card--sparse {
-  width: min(100%, 400px);
+  width: min(100%, 380px);
   min-height: 0;
 }
 
 .profile-card--minimal {
-  width: min(100%, 372px);
+  width: min(100%, 360px);
   min-height: 0;
 }
 
@@ -732,7 +732,7 @@
   width: 100%;
 }
 
-..social-row {
+.social-row {
   display: inline-grid;
   width: auto;
   grid-auto-flow: column;
