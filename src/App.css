@@ -733,7 +733,10 @@
 }
 
 .social-row {
-  grid-template-columns: repeat(4, 1fr);
+  display: inline-grid;
+  grid-auto-flow: column;
+  gap: 0.7rem;
+  margin: 0 auto;
 }
 
 .social-row__link,
