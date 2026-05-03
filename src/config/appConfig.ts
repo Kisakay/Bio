@@ -30,7 +30,7 @@ interface AppConfig {
   themeStyles: Record<string, string>
 }
 
-const allowedIcons: SocialLink['icon'][] = ['discord', 'github', 'globe', 'youtube', 'telegram']
+const allowedIcons: SocialLink['icon'][] = ['discord', 'github', 'globe', 'youtube']
 const fallbackProfileUsername = 'kisakay'
 
 function sanitizePath(path: string) {
