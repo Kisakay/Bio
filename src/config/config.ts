@@ -39,6 +39,7 @@ const profileConfig: ProfileConfigSource = {
   },
   socials: [
     { label: 'Discord', icon: 'discord', url: 'https://discord.gg/reqb' },
+    { label: 'GitHub', icon: 'github', url: 'https://github.com/reqb' },
   ],
   badges: [
     { label: 'Bug Hunter Gold', icon: 'assets/discord_badges/bug_hunter_level_2.svg' },
