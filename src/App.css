@@ -139,7 +139,7 @@
 .corner-player,
 .corner-views {
   position: fixed;
-  z-index: 12;
+  z-index: 22;
   display: inline-flex;
   align-items: center;
   gap: 0.8rem;
@@ -260,6 +260,7 @@
 }
 
 .corner-views {
+  z-index: 22;
   right: 1rem;
   bottom: 1rem;
   transform: translate3d(12px, 8px, 0);
