@@ -487,7 +487,6 @@ function resetCardTilt() {
                   stroke="currentColor" stroke-linejoin="round" stroke-width="1.45" />
                 <path v-if="link.icon === 'youtube'" d="m10.35 9.56 4.2 2.44-4.2 2.44V9.56Z" fill="currentColor" />
               </svg>
-              <span class="social-row__label">{{ link.label }}</span>
             </a>
           </nav>
 
