@@ -732,8 +732,9 @@
   width: 100%;
 }
 
-.social-row {
+..social-row {
   display: inline-grid;
+  width: auto;
   grid-auto-flow: column;
   gap: 0.7rem;
   margin: 0 auto;
