@@ -2,7 +2,7 @@ module.exports = {
   apps: [
     {
       name: "kisakay-api",
-      script: "./server",
+      script: "./main",
 
       instances: 1,
       exec_mode: "fork",
